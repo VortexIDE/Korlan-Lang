@@ -1,0 +1,778 @@
+# Korlan Programming Language Design
+
+---
+
+## Proposed Name
+
+**Name:** Korlan
+
+---
+
+## Overview
+
+**Korlan** is a modern, compiled systems programming language designed to maximize both developer productivity and runtime performance. It combines:
+
+- **Simplicity-first syntax** with no semicolons, minimal punctuation, and natural flow
+- **Automatic memory management** via garbage collection by default, with granular opt-out for performance-critical code
+- **Compile-to-binary** for native performance comparable to C++ and Rust
+- **Arrow-driven design** (`->`) for enhanced readability in function signatures, type annotations, and transformations
+- **Object-oriented core** with modern safety features built in
+- **Safe concurrency** with lightweight constructs inspired by Go
+- **Practical interoperability** with Rust and C++ through FFI and compatibility layers
+
+**Philosophy:** Korlan believes programming should feel natural. The compiler handles complexity so developers focus on logic, not boilerplate. Safety is default; performance is accessible.
+
+---
+
+## Features
+
+- **Zero-ceremony syntax** – No semicolons, no mandatory return statements, no visual clutter
+- **Arrow semantics (`->`)** – Clear visual flow for functions, types, pipelines, and transformations
+- **Garbage collection by default** – Automatic memory management with per-function/class opt-out
+- **Type inference** – Optional type annotations; compiler infers when obvious
+- **Null safety** – Explicit nullable types prevent null pointer errors
+- **Immutable by default** – Variables immutable unless marked `mut`
+- **Pattern matching** – Expressive control flow with `match` expressions
+- **Safe concurrency** – Lightweight goroutine-style tasks with channel-based communication
+- **Object-oriented** – Classes, interfaces, inheritance with modern safety
+- **Minimal runtime** – Small binary footprint, fast startup
+- **Native binary compilation** – LLVM backend for optimized machine code
+- **Module system** – Simple, intuitive package management
+- **Interop support** – Call Rust/C++ code, export Korlan functions
+
+---
+
+## Syntax
+
+### Hello World
+
+```korlan
+fun main() {
+    print("Hello, Korlan!")
+}
+```
+
+### Variables & Type Inference
+
+```korlan
+// Immutable by default
+name = "Alice"
+age = 30
+pi = 3.14159
+
+// Mutable when needed
+mut counter = 0
+counter = counter + 1
+
+// Explicit types (optional)
+greeting: String = "Hello"
+total: Int -> 100
+```
+
+### Functions with Arrows
+
+```korlan
+// Simple function
+fun greet(name: String) -> String {
+    "Hello, {name}!"
+}
+
+// Multiple parameters
+fun add(a: Int, b: Int) -> Int {
+    a + b  // Last expression is returned
+}
+
+// No return type needed for void
+fun log(message: String) {
+    print(message)
+}
+
+// Single-expression functions
+fun square(x: Int) -> Int => x * x
+
+// Using arrow for clarity
+fun process(input: String) -> Result {
+    input
+        -> trim()
+        -> toLowerCase()
+        -> validate()
+}
+```
+
+### Control Flow
+
+```korlan
+// If expressions (no parentheses needed)
+fun checkAge(age: Int) -> String {
+    if age >= 18 {
+        "Adult"
+    } else {
+        "Minor"
+    }
+}
+
+// Pattern matching
+fun describe(value: Any) -> String {
+    match value {
+        is Int -> "It's a number: {value}"
+        is String -> "It's text: {value}"
+        null -> "It's nothing"
+        else -> "Unknown type"
+    }
+}
+
+// Loops
+fun printNumbers() {
+    for i in 0..10 {
+        print(i)
+    }
+    
+    mut count = 0
+    while count < 5 {
+        print(count)
+        count += 1
+    }
+}
+```
+
+### Collections & Pipelines
+
+```korlan
+// Lists
+numbers = [1, 2, 3, 4, 5]
+names = ["Alice", "Bob", "Charlie"]
+
+// Arrow pipelines for transformations
+result = numbers
+    -> filter(x => x > 2)
+    -> map(x => x * 2)
+    -> sum()
+
+// Maps
+ages = {
+    "Alice": 30,
+    "Bob": 25,
+    "Charlie": 35
+}
+```
+
+---
+
+## Object-Oriented Support
+
+### Classes
+
+```korlan
+class Person {
+    name: String
+    age: Int
+    
+    // Constructor (implicit)
+    init(name: String, age: Int) {
+        this.name = name
+        this.age = age
+    }
+    
+    // Methods
+    fun greet() -> String {
+        "Hello, I'm {this.name}"
+    }
+    
+    fun haveBirthday() {
+        this.age += 1
+    }
+}
+
+// Usage
+person = Person("Alice", 30)
+print(person.greet())
+person.haveBirthday()
+```
+
+### Inheritance & Interfaces
+
+```korlan
+interface Drawable {
+    fun draw()
+    fun area() -> Float
+}
+
+class Rectangle : Drawable {
+    width: Float
+    height: Float
+    
+    init(width: Float, height: Float) {
+        this.width = width
+        this.height = height
+    }
+    
+    fun draw() {
+        print("Drawing rectangle")
+    }
+    
+    fun area() -> Float {
+        width * height
+    }
+}
+
+class Circle : Drawable {
+    radius: Float
+    
+    init(radius: Float) {
+        this.radius = radius
+    }
+    
+    fun draw() {
+        print("Drawing circle")
+    }
+    
+    fun area() -> Float {
+        3.14159 * radius * radius
+    }
+}
+```
+
+### Properties & Modifiers
+
+```korlan
+class Counter {
+    mut count: Int = 0
+    
+    // Computed property
+    fun isEven() -> Bool {
+        count % 2 == 0
+    }
+    
+    // Public by default
+    fun increment() {
+        count += 1
+    }
+    
+    // Private method
+    private fun reset() {
+        count = 0
+    }
+}
+```
+
+---
+
+## Safety
+
+### Memory Safety with Flexible GC
+
+**Default: Garbage Collected**
+- Automatic memory management prevents use-after-free, double-free, and memory leaks
+- Zero-cost abstractions where possible
+- Generational GC optimized for modern workloads
+
+**Opt-Out for Performance:**
+
+```korlan
+// In korlan.config
+gc = true  // Global default
+
+// Per-function opt-out
+@nogc
+fun criticalPath(data: Array<Int>) -> Int {
+    // No GC pauses here - manual or stack management
+    // Compiler enforces safety rules
+    sum = 0
+    for x in data {
+        sum += x
+    }
+    sum
+}
+
+// Per-class opt-out
+@nogc
+class HighPerformanceBuffer {
+    data: RawPointer<Byte>
+    size: Int
+    
+    init(size: Int) {
+        this.data = allocate(size)  // Manual allocation
+        this.size = size
+    }
+    
+    fun cleanup() {
+        free(this.data)  // Manual deallocation required
+    }
+}
+```
+
+### Type Safety
+
+```korlan
+// Null safety with optional types
+name: String? = null  // Nullable
+safeName: String = "Alice"  // Never null
+
+// Safe unwrapping
+if name != null {
+    print(name)  // Compiler knows it's safe
+}
+
+// Elvis operator
+displayName = name ?: "Anonymous"
+
+// Safe navigation
+length = name?.length ?: 0
+```
+
+### Bounds Checking
+
+```Korlan
+numbers = [1, 2, 3, 4, 5]
+
+// Runtime bounds checking (default)
+value = numbers[2]  // Safe
+
+// Compile-time checking when possible
+for i in 0..<numbers.length {
+    print(numbers[i])  // Compiler proves safety
+}
+
+// Unsafe opt-out (explicit)
+@unsafe
+fun rawAccess(arr: Array<Int>, index: Int) -> Int {
+    arr.getUnchecked(index)  // No bounds check - your responsibility
+}
+```
+
+### Safe Concurrency
+
+```Korlan
+// Lightweight tasks (goroutine-style)
+fun fetchData(url: String) {
+    spawn {
+        data = httpGet(url)
+        print("Fetched: {data}")
+    }
+}
+
+// Channels for communication
+fun producer(ch: Channel<Int>) {
+    for i in 0..10 {
+        ch <- i  // Send
+    }
+    ch.close()
+}
+
+fun consumer(ch: Channel<Int>) {
+    for value in ch {  // Receive until closed
+        print(value)
+    }
+}
+
+// Usage
+channel = Channel<Int>()
+spawn { producer(channel) }
+spawn { consumer(channel) }
+```
+
+### Ownership & Borrowing (Hybrid Approach)
+
+```Korlan
+// GC mode: No explicit ownership needed
+fun processGC(data: String) {
+    upper = data.toUpperCase()
+    print(upper)
+}
+
+// @nogc mode: Rust-like ownership
+@nogc
+fun processOwned(data: String) {
+    // data is moved here, original invalidated
+    upper = data.toUpperCase()
+    print(upper)
+}  // data dropped here
+
+@nogc
+fun processBorrowed(data: &String) {
+    // Borrowed reference, can't outlive original
+    print(data.length)
+}
+```
+
+---
+
+## IDE/UI Concepts
+
+### Goals
+
+- **Lightweight tooling** – Fast startup, low memory usage (<500MB typical)
+- **Real-time feedback** – Instant error highlighting, type hints
+- **Minimal latency** – Sub-100ms compilation for small changes
+- **Integrated REPL** – Interactive experimentation
+- **Smart completions** – Context-aware without heavy indexing
+- **Simple debugger** – Breakpoints, watches, no complexity
+
+### Realistic Expectations
+
+- **Incremental compilation** – Only recompile changed modules
+- **Efficient LSP** – Language server protocol implementation optimized for speed
+- **Background compilation** – Non-blocking error checking
+- **Minimal plugins** – Core features built-in, avoid ecosystem fragmentation
+- **Text-first philosophy** – Great CLI tools, IDE is enhancement not requirement
+
+### IDE Features
+
+```
+Korlan new myproject      # Create project
+Korlan run               # Build and run
+Korlan test              # Run tests
+Korlan fmt               # Format code
+Korlan check             # Type check without building
+Korlan doc               # Generate documentation
+Korlan repl              # Start interactive REPL
+```
+
+### Editor Integration
+
+- **VS Code extension** – Syntax highlighting, autocomplete, debugging
+- **IntelliJ plugin** – Full IDE integration
+- **Vim/Neovim** – LSP client support
+- **Any LSP-compatible editor** – Consistent experience
+
+---
+
+## Interoperability
+
+### Calling C++ from Korlan
+
+```Korlan
+// Define external C++ function
+@extern("C++")
+fun cppCalculate(a: Int, b: Int) -> Int
+
+// Use it like native Korlan
+result = cppCalculate(10, 20)
+
+// Link in build config:
+// Korlan.config
+[dependencies]
+cpp_libs = ["libmath.so"]
+```
+
+### Calling Rust from Korlan
+
+```Korlan
+// Rust functions with C ABI
+@extern("C")
+fun rust_process(data: RawPointer<Byte>, len: Int) -> Int
+
+// Wrapper for safety
+fun processRust(data: Array<Byte>) -> Int {
+    rust_process(data.ptr, data.length)
+}
+```
+
+### Exporting Korlan to C++/Rust
+
+```Korlan
+// Export Korlan function
+@export("C")
+fun KorlanAdd(a: Int, b: Int) -> Int {
+    a + b
+}
+
+// Generates header:
+// extern "C" int KorlanAdd(int a, int b);
+```
+
+### Limitations & Compatibility Layer
+
+**Direct Compatibility:**
+- ✅ C ABI functions (both directions)
+- ✅ Plain data types (int, float, pointers)
+- ✅ Structs with C layout
+- ⚠️ C++ classes (requires wrapping)
+- ⚠️ Rust traits (requires C ABI layer)
+
+**Requires Compatibility Layer:**
+- **C++ STL types** – Wrap `std::vector`, `std::string` with C API
+- **Rust ownership** – Convert to/from C types at boundary
+- **Exceptions** – Map to error codes or result types
+- **Generics** – Monomorphization at FFI boundary
+
+**Example Compatibility Layer:**
+
+```Korlan
+// Korlan wrapper for C++ vector
+@cppclass("std::vector<int>")
+class CppVector {
+    @extern("C++")
+    private fun cpp_new() -> RawPointer
+    
+    @extern("C++")
+    private fun cpp_push(vec: RawPointer, value: Int)
+    
+    @extern("C++")
+    private fun cpp_get(vec: RawPointer, index: Int) -> Int
+    
+    handle: RawPointer
+    
+    init() {
+        this.handle = cpp_new()
+    }
+    
+    fun push(value: Int) {
+        cpp_push(this.handle, value)
+    }
+    
+    fun get(index: Int) -> Int {
+        cpp_get(this.handle, index)
+    }
+}
+```
+
+---
+
+## Limitations
+
+### Objective Trade-offs
+
+**Performance:**
+- **GC overhead** – Default GC adds ~5-15% overhead vs manual memory management
+  - *Mitigation:* Use `@nogc` for hot paths
+- **Runtime checks** – Bounds checking adds 1-3% cost in safe mode
+  - *Mitigation:* `@unsafe` blocks for verified code
+- **Not quite C++/Rust speed** – Prioritizes safety and simplicity over absolute peak performance
+  - *Target:* 85-95% of hand-optimized C++ in real-world scenarios
+
+**Features:**
+- **No metaprogramming (v1.0)** – No macros or compile-time code generation initially
+  - *Future:* Planned for v2.0 with compile-time evaluation
+- **Simple generics** – No advanced type system features like Higher-Kinded Types
+  - *Rationale:* Keeps compiler and learning curve manageable
+- **Limited operator overloading** – Only arithmetic and comparison
+  - *Rationale:* Prevents abuse that hurts readability
+
+**Simplicity Choices:**
+- **Single paradigm focus** – OOP primary, functional features secondary
+- **Explicit over implicit** – Some verbosity for clarity (e.g., type annotations in public APIs)
+- **No preprocessor** – Build-time configuration via config files, not code generation
+
+**Interoperability:**
+- **FFI boundary costs** – Marshalling between GC and non-GC memory
+- **Manual wrapping** – C++ classes require wrapper code
+- **ABI stability** – Korlan ABI may change between versions (standard practice)
+
+**Tooling:**
+- **Smaller ecosystem** – New language means fewer libraries initially
+- **IDE maturity** – Will improve over time but starts basic
+- **Debugger limitations** – Advanced features (time-travel debugging) post-v1.0
+
+---
+
+## Documentation Outline
+
+### 1. Getting Started
+- 1.1 Installation
+- 1.2 Your First Korlan Program
+- 1.3 Project Structure
+- 1.4 Build System & Configuration
+
+### 2. Language Fundamentals
+- 2.1 Variables & Constants
+- 2.2 Data Types (Int, Float, String, Bool, Arrays, Maps)
+- 2.3 Type Inference & Annotations
+- 2.4 Null Safety & Optional Types
+- 2.5 Operators & Expressions
+
+### 3. Control Flow
+- 3.1 If/Else Expressions
+- 3.2 Match (Pattern Matching)
+- 3.3 Loops (for, while, loop)
+- 3.4 Break & Continue
+
+### 4. Functions
+- 4.1 Function Syntax & Arrow Notation
+- 4.2 Parameters & Return Types
+- 4.3 Single-Expression Functions
+- 4.4 Higher-Order Functions
+- 4.5 Closures & Lambdas
+
+### 5. Object-Oriented Programming
+- 5.1 Classes & Objects
+- 5.2 Constructors (init)
+- 5.3 Properties & Methods
+- 5.4 Inheritance
+- 5.5 Interfaces
+- 5.6 Abstract Classes
+- 5.7 Visibility Modifiers
+- 5.8 Extension Functions
+
+### 6. Memory Management
+- 6.1 Default Garbage Collection
+- 6.2 GC Configuration (Korlan.config)
+- 6.3 @nogc Annotation (Per-Function)
+- 6.4 @nogc Annotation (Per-Class)
+- 6.5 Manual Memory Management
+- 6.6 Ownership & Borrowing in @nogc Mode
+- 6.7 Smart Pointers
+
+### 7. Safety Features
+- 7.1 Type Safety
+- 7.2 Null Safety
+- 7.3 Bounds Checking
+- 7.4 Safe Casting
+- 7.5 @unsafe Blocks
+- 7.6 Error Handling (Result Types)
+
+### 8. Concurrency
+- 8.1 Spawning Tasks
+- 8.2 Channels
+- 8.3 Async/Await (Future Feature)
+- 8.4 Thread Safety
+- 8.5 Synchronization Primitives
+
+### 9. Collections & Pipelines
+- 9.1 Arrays & Lists
+- 9.2 Maps & Sets
+- 9.3 Pipeline Operators (->)
+- 9.4 Standard Collection Methods
+- 9.5 Iterators
+
+### 10. Modules & Packages
+- 10.1 Module System
+- 10.2 Import Statements
+- 10.3 Package Management
+- 10.4 Creating Libraries
+
+### 11. Interoperability
+- 11.1 FFI Overview
+- 11.2 Calling C Functions
+- 11.3 Calling C++ Functions
+- 11.4 Calling Rust Functions
+- 11.5 Exporting Korlan Functions
+- 11.6 Data Type Mapping
+- 11.7 Building Compatibility Layers
+- 11.8 Example Integrations
+
+### 12. Advanced Features
+- 12.1 Generic Programming
+- 12.2 Traits (Future)
+- 12.3 Reflection (Limited)
+- 12.4 Annotations & Attributes
+
+### 13. Tooling & Development
+- 13.1 Korlan CLI Reference
+- 13.2 Build Configuration (Korlan.config)
+- 13.3 IDE Setup (VS Code, IntelliJ, Vim)
+- 13.4 REPL Usage
+- 13.5 Debugging
+- 13.6 Testing Framework
+- 13.7 Code Formatting
+- 13.8 Documentation Generation
+
+### 14. Standard Library
+- 14.1 Core Types
+- 14.2 Collections
+- 14.3 I/O & File System
+- 14.4 Networking
+- 14.5 Concurrency Primitives
+- 14.6 Date & Time
+- 14.7 Math & Random
+- 14.8 String Operations
+- 14.9 JSON & Serialization
+
+### 15. Performance & Optimization
+- 15.1 Profiling
+- 15.2 Optimization Techniques
+- 15.3 When to Use @nogc
+- 15.4 Benchmarking
+- 15.5 Memory Usage Analysis
+
+### 16. Best Practices
+- 16.1 Code Style Guide
+- 16.2 Error Handling Patterns
+- 16.3 API Design
+- 16.4 Performance Tips
+- 16.5 Security Considerations
+
+### 17. Language Reference
+- 17.1 Grammar Specification
+- 17.2 Keyword Reference
+- 17.3 Operator Precedence
+- 17.4 Reserved Words
+- 17.5 Annotation Reference
+
+### 18. Migration Guides
+- 18.1 From Kotlin
+- 18.2 From Go
+- 18.3 From Rust
+- 18.4 From C++
+
+### 19. Appendices
+- A. Comparison with Other Languages
+- B. Roadmap & Future Features
+- C. Contributing to Korlan
+- D. FAQ
+- E. Glossary
+
+---
+
+## Quick Reference Card
+
+### Basic Syntax
+
+```Korlan
+// Variables
+name = "Korlan"
+mut counter = 0
+
+// Functions
+fun add(a: Int, b: Int) -> Int => a + b
+
+// Classes
+class Point {
+    x: Float
+    y: Float
+    
+    init(x: Float, y: Float) {
+        this.x = x
+        this.y = y
+    }
+}
+
+// Control Flow
+if condition {
+    doSomething()
+} else {
+    doOther()
+}
+
+match value {
+    0 -> "zero"
+    1 -> "one"
+    else -> "other"
+}
+
+// Loops
+for i in 0..10 {
+    print(i)
+}
+
+// Concurrency
+spawn {
+    longRunningTask()
+}
+
+// Pipeline
+result = data
+    -> filter(x => x > 0)
+    -> map(x => x * 2)
+    -> sum()
+
+// GC Control
+@nogc
+fun performance() {
+    // No GC here
+}
+```
+
+---
+
+**Korlan: Simple. Safe. Fast.**
