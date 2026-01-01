@@ -33,6 +33,16 @@ class OpCode(Enum):
     # Object operations
     GET_ATTR = "GET_ATTR"
     SET_ATTR = "SET_ATTR"
+    GET_INDEX = "GET_INDEX"
+    SET_INDEX = "SET_INDEX"
+    
+    # Class and interface operations
+    NEW_CLASS = "NEW_CLASS"
+    NEW_INTERFACE = "NEW_INTERFACE"
+    INHERIT = "INHERIT"
+    IMPLEMENT = "IMPLEMENT"
+    METHOD_CALL = "METHOD_CALL"
+    SUPER_CALL = "SUPER_CALL"
     
     # Function operations
     CALL_FUNC = "CALL_FUNC"
@@ -89,8 +99,12 @@ class KorlanCompiler:
         self.constants: List[Any] = []
         self.variables: Dict[str, int] = {}
         self.functions: Dict[str, int] = {}
+        self.classes: Dict[str, int] = {}
+        self.interfaces: Dict[str, int] = {}
         self.labels: Dict[str, int] = {}
         self.current_function = None
+        self.current_class = None
+        self.current_interface = None
         self.scope_depth = 0
         self.loop_stack = []
         
@@ -154,6 +168,10 @@ class KorlanCompiler:
                 self.compile_node(child)
         elif node.type == NodeType.FUNCTION:
             self.compile_function(node)
+        elif node.type == NodeType.CLASS:
+            self.compile_class(node)
+        elif node.type == NodeType.INTERFACE:
+            self.compile_interface(node)
         elif node.type == NodeType.VARIABLE:
             self.compile_variable(node)
         elif node.type == NodeType.EXPRESSION_STMT:
@@ -196,6 +214,101 @@ class KorlanCompiler:
             self.emit(OpCode.RETURN)
         
         self.current_function = None
+    
+    def compile_class(self, node: ASTNode):
+        """Compile class declaration"""
+        class_name = node.value
+        self.current_class = class_name
+        
+        # Store class position
+        self.classes[class_name] = len(self.bytecode)
+        
+        # Emit class creation instruction
+        class_index = self.add_constant(class_name)
+        self.emit(OpCode.NEW_CLASS, class_index, node)
+        
+        # Compile class body (properties and methods)
+        if len(node.children) > 0:
+            for child in node.children:
+                if child.type == NodeType.FUNCTION:
+                    # This is a method
+                    self.compile_method(child, class_name)
+                elif child.type == NodeType.VARIABLE:
+                    # This is a property
+                    self.compile_property(child, class_name)
+        
+        self.current_class = None
+    
+    def compile_interface(self, node: ASTNode):
+        """Compile interface declaration"""
+        interface_name = node.value
+        self.current_interface = interface_name
+        
+        # Store interface position
+        self.interfaces[interface_name] = len(self.bytecode)
+        
+        # Emit interface creation instruction
+        interface_index = self.add_constant(interface_name)
+        self.emit(OpCode.NEW_INTERFACE, interface_index, node)
+        
+        # Compile interface body (method signatures)
+        if len(node.children) > 0:
+            for child in node.children:
+                if child.type == NodeType.FUNCTION:
+                    # This is a method signature
+                    self.compile_method_signature(child, interface_name)
+        
+        self.current_interface = None
+    
+    def compile_method(self, node: ASTNode, class_name: str):
+        """Compile class method"""
+        method_name = node.value
+        old_class = self.current_class
+        
+        # Create method signature
+        full_method_name = f"{class_name}.{method_name}"
+        self.functions[full_method_name] = len(self.bytecode)
+        
+        # Compile method body
+        if len(node.children) > 0:
+            body = node.children[-1]
+            if body.type == NodeType.BLOCK:
+                for stmt in body.children:
+                    self.compile_node(stmt)
+            else:
+                self.compile_node(body)
+                self.emit(OpCode.RETURN)
+        else:
+            self.emit(OpCode.RETURN)
+    
+    def compile_method_signature(self, node: ASTNode, interface_name: str):
+        """Compile interface method signature"""
+        method_name = node.value
+        
+        # Create method signature entry
+        full_method_name = f"{interface_name}.{method_name}"
+        self.functions[full_method_name] = len(self.bytecode)
+        
+        # Interface methods don't have bodies, just signatures
+        # In a real implementation, this would store the signature for later implementation checking
+        pass
+    
+    def compile_property(self, node: ASTNode, class_name: str):
+        """Compile class property"""
+        prop_name = node.value.replace("mut ", "")  # Remove mut prefix
+        
+        # Set property index in class context
+        prop_index = self.set_variable_index(f"{class_name}.{prop_name}")
+        
+        # Compile initializer if present
+        if len(node.children) > 0:
+            initializer = node.children[-1]
+            self.compile_node(initializer)
+            self.emit(OpCode.STORE_VAR, prop_index, node)
+        else:
+            # Store default value (null)
+            self.emit(OpCode.PUSH_NULL)
+            self.emit(OpCode.STORE_VAR, prop_index, node)
     
     def compile_variable(self, node: ASTNode):
         """Compile variable declaration"""
@@ -247,8 +360,31 @@ class KorlanCompiler:
         self.emit(opcode, node=node)
     
     def compile_function_call(self, node: ASTNode):
-        """Compile function call"""
+        """Compile function call with method call support"""
         func_name = node.value
+        
+        # Check for method calls (object.method pattern)
+        if "." in func_name and len(node.children) > 0:
+            # This is likely a method call
+            parts = func_name.split(".")
+            if len(parts) == 2:
+                object_name, method_name = parts
+                
+                # Compile the object first
+                if object_name in self.variables:
+                    var_index = self.get_variable_index(object_name)
+                    self.emit(OpCode.LOAD_VAR, var_index, node)
+                else:
+                    self.error(f"Undefined object for method call: {object_name}", node)
+                
+                # Compile arguments
+                for arg in node.children:
+                    self.compile_node(arg)
+                
+                # Emit method call
+                method_index = self.add_constant(method_name)
+                self.emit(OpCode.METHOD_CALL, method_index, node)
+                return
         
         # Check for built-in functions
         if func_name in self.builtin_functions:
@@ -414,25 +550,50 @@ class KorlanCompiler:
         print(f"Constants: {self.constants}")
         print(f"Variables: {self.variables}")
         print(f"Functions: {self.functions}")
+        print(f"Classes: {self.classes}")
+        print(f"Interfaces: {self.interfaces}")
         print("\nInstructions:")
         for i, instruction in enumerate(self.bytecode):
             operand_str = f" {instruction.operand}" if instruction.operand is not None else ""
             print(f"{i:3d}: {instruction.opcode.value:15s}{operand_str}")
 
 def main():
-    """Test the compiler with sample code"""
+    """Test the compiler with sample code including classes"""
     from lexer import KorlanLexer, LexerError
     from parser import KorlanParser, ParserError
-    from semantic import SemanticAnalyzer, SemanticError
+    from checker import SemanticAnalyzer
     
     sample_code = '''
+# Test class compilation
+class Person {
+    mut name: String
+    age: Int
+    
+    init(name: String, age: Int) {
+        this.name = name
+        this.age = age
+    }
+    
+    fun greet() -> String {
+        "Hello, I'm " + this.name + " and I'm " + this.age + " years old"
+    }
+}
+
+# Test interface compilation
+interface Drawable {
+    fun draw()
+    fun area() -> Float
+}
+
 fun main() {
-    print("Hello, Korlan!")
+    person = Person("Alice", 30)
+    message = person.greet()
+    print(message)
 }
 '''
 
     
-    print("=== Korlan Compiler Test ===")
+    print("=== Korlan Compiler Test (with Classes & Interfaces) ===")
     print("Input code:")
     print(sample_code)
     
@@ -442,6 +603,13 @@ fun main() {
     
     parser = KorlanParser(tokens)
     ast = parser.parse()
+    
+    # Semantic analysis
+    analyzer = SemanticAnalyzer()
+    if not analyzer.check(ast):
+        print("Semantic analysis failed:")
+        analyzer.print_errors()
+        return
     
     compiler = KorlanCompiler()
     bytecode = compiler.compile(ast)

@@ -22,13 +22,73 @@ class CallFrame:
     function_name: str
     stack_base: int  # Base position in the stack for this frame
     parent_frame: Optional['CallFrame'] = None  # For recursion support
+    operand_stack: List[Any] = None  # Frame-specific operand stack
+    
+    def __post_init__(self):
+        if self.operand_stack is None:
+            self.operand_stack = []
 
-class KVMError(Exception):
-    def __init__(self, message: str, instruction: Optional[Instruction] = None, ip: int = 0):
+class KorlanVMError(Exception):
+    def __init__(self, message: str, line: int = 0, column: int = 0, code_snippet: str = ""):
         self.message = message
-        self.instruction = instruction
-        self.ip = ip
-        super().__init__(f"KVM Error at instruction {ip}: {message}")
+        self.line = line
+        self.column = column
+        self.code_snippet = code_snippet
+        super().__init__(f"Korlan Error at line {line}, column {column}: {message}")
+        if code_snippet:
+            super().__init__(f"Korlan Error at line {line}, column {column}: {message}\nCode: {code_snippet}")
+
+class NativeBridge:
+    """Bridge between Korlan and Python native functions"""
+    
+    def __init__(self):
+        self.native_functions = {
+            'open': self.native_open,
+            'read': self.native_read,
+            'sys_argv': self.native_sys_argv,
+            'print': self.native_print,
+        }
+    
+    def native_open(self, filename: str, mode: str = 'r') -> Any:
+        """Native file open function"""
+        try:
+            return open(filename, mode)
+        except Exception as e:
+            raise KorlanVMError(f"Failed to open file '{filename}': {str(e)}")
+    
+    def native_read(self, file_obj: Any, size: int = -1) -> str:
+        """Native file read function"""
+        try:
+            if hasattr(file_obj, 'read'):
+                return file_obj.read(size) if size > 0 else file_obj.read()
+            else:
+                raise KorlanVMError("Object is not a file object")
+        except Exception as e:
+            raise KorlanVMError(f"Failed to read from file: {str(e)}")
+    
+    def native_sys_argv(self) -> List[str]:
+        """Native sys.argv access"""
+        return sys.argv
+    
+    def native_print(self, *args) -> None:
+        """Native print function"""
+        print(*args)
+    
+    def call_function(self, func_name: str, args: List[Any]) -> Any:
+        """Call a native function"""
+        if func_name not in self.native_functions:
+            raise KorlanVMError(f"Native function '{func_name}' not found")
+        
+        try:
+            return self.native_functions[func_name](*args)
+        except Exception as e:
+            if isinstance(e, KorlanVMError):
+                raise
+            raise KorlanVMError(f"Native function '{func_name}' failed: {str(e)}")
+    
+    def list_functions(self) -> List[str]:
+        """List all available native functions"""
+        return list(self.native_functions.keys())
 
 class KorlanVM:
     """Korlan Virtual Machine - Stack-based bytecode executor with proper frame management"""
@@ -42,8 +102,8 @@ class KorlanVM:
         self.debug = debug
         self.current_frame: Optional[CallFrame] = None
         
-        # Initialize native methods bridge
-        self.native_methods = NativeMethods()
+        # Initialize native bridge
+        self.native_bridge = NativeBridge()
         
         # Built-in functions (legacy support)
         self.builtins: Dict[str, Callable] = {
@@ -68,7 +128,8 @@ class KorlanVM:
             locals={},
             function_name=func_name,
             stack_base=len(self.stack),
-            parent_frame=self.current_frame
+            parent_frame=self.current_frame,
+            operand_stack=[]  # Each frame has its own operand stack
         )
         
         # Update call depth tracking
@@ -111,31 +172,52 @@ class KorlanVM:
             return True
         return False
     
-    def error(self, message: str, instruction: Optional[Instruction] = None) -> KVMError:
-        raise KVMError(message, instruction, self.ip)
+    def error(self, message: str, instruction: Optional[Instruction] = None, line: int = 0, column: int = 0, code_snippet: str = "") -> KorlanVMError:
+        if instruction:
+            line = instruction.line
+            column = instruction.column
+        raise KorlanVMError(message, line, column, code_snippet)
     
     def push(self, value: Any):
-        """Push value onto stack"""
-        self.stack.append(value)
-        self.max_stack_depth = max(self.max_stack_depth, len(self.stack))
-        if self.debug:
-            print(f"STACK PUSH: {value} (depth: {len(self.stack)})")
+        """Push value onto current frame's operand stack or global stack"""
+        if self.current_frame and hasattr(self.current_frame, 'operand_stack'):
+            self.current_frame.operand_stack.append(value)
+            if self.debug:
+                print(f"FRAME PUSH ({self.current_frame.function_name}): {value} (depth: {len(self.current_frame.operand_stack)})")
+        else:
+            self.stack.append(value)
+            self.max_stack_depth = max(self.max_stack_depth, len(self.stack))
+            if self.debug:
+                print(f"GLOBAL PUSH: {value} (depth: {len(self.stack)})")
     
     def pop(self) -> Any:
-        """Pop value from stack"""
-        if len(self.stack) == 0:
+        """Pop value from current frame's operand stack or global stack"""
+        if self.current_frame and hasattr(self.current_frame, 'operand_stack') and self.current_frame.operand_stack:
+            value = self.current_frame.operand_stack.pop()
+            if self.debug:
+                print(f"FRAME POP ({self.current_frame.function_name}): {value} (depth: {len(self.current_frame.operand_stack)})")
+            return value
+        elif self.stack:
+            value = self.stack.pop()
+            if self.debug:
+                print(f"GLOBAL POP: {value} (depth: {len(self.stack)})")
+            return value
+        else:
             self.error("Stack underflow")
-        
-        value = self.stack.pop()
-        if self.debug:
-            print(f"STACK POP: {value} (depth: {len(self.stack)})")
-        return value
     
     def peek(self, offset: int = 0) -> Any:
         """Peek at stack value without popping"""
-        if len(self.stack) <= offset:
+        if self.current_frame and hasattr(self.current_frame, 'operand_stack') and self.current_frame.operand_stack:
+            frame_stack = self.current_frame.operand_stack
+            if len(frame_stack) <= offset:
+                self.error("Stack underflow")
+            return frame_stack[-(offset + 1)]
+        elif self.stack:
+            if len(self.stack) <= offset:
+                self.error("Stack underflow")
+            return self.stack[-(offset + 1)]
+        else:
             self.error("Stack underflow")
-        return self.stack[-(offset + 1)]
     
     def execute(self, bytecode: List[Instruction], constants: List[Any]) -> Any:
         """Execute bytecode and return the result"""
@@ -160,10 +242,10 @@ class KorlanVM:
             # Return the top of stack if not empty
             return self.stack[-1] if self.stack else None
             
-        except KVMError:
+        except KorlanVMError:
             raise
         except Exception as e:
-            raise KVMError(f"Unexpected error during execution: {str(e)}", bytecode[self.ip] if self.ip < len(bytecode) else None, self.ip)
+            raise KorlanVMError(f"Unexpected error during execution: {str(e)}", bytecode[self.ip].line if self.ip < len(bytecode) else 0, bytecode[self.ip].column if self.ip < len(bytecode) else 0)
     
     def execute_instruction(self, instruction: Instruction):
         """Execute a single instruction"""
@@ -266,6 +348,67 @@ class KorlanVM:
             else:
                 self.error(f"Cannot access attribute '{attr_name}' on {type(obj).__name__}", instruction)
         
+        elif opcode == OpCode.GET_INDEX:
+            # Get index from list or map
+            index = self.pop()
+            collection = self.pop()
+            
+            if collection is None:
+                self.error(f"Cannot index into null collection", instruction)
+            
+            # Handle list-like objects
+            if isinstance(collection, (list, tuple)):
+                if not isinstance(index, int):
+                    self.error(f"List index must be integer, got {type(index).__name__}", instruction)
+                
+                if index < 0 or index >= len(collection):
+                    self.error(f"Index {index} out of bounds for collection of length {len(collection)}", instruction)
+                
+                self.push(collection[index])
+            # Handle dictionary-like objects
+            elif isinstance(collection, dict):
+                if index in collection:
+                    self.push(collection[index])
+                else:
+                    self.push(None)  # Return null for missing keys (like safe navigation)
+            # Handle string indexing
+            elif isinstance(collection, str):
+                if not isinstance(index, int):
+                    self.error(f"String index must be integer, got {type(index).__name__}", instruction)
+                
+                if index < 0 or index >= len(collection):
+                    self.error(f"Index {index} out of bounds for string of length {len(collection)}", instruction)
+                
+                self.push(collection[index])
+            else:
+                self.error(f"Cannot index into {type(collection).__name__}", instruction)
+        
+        elif opcode == OpCode.SET_INDEX:
+            # Set index in list or map
+            value = self.pop()
+            index = self.pop()
+            collection = self.pop()
+            
+            if collection is None:
+                self.error(f"Cannot index into null collection", instruction)
+            
+            # Handle list-like objects
+            if isinstance(collection, list):
+                if not isinstance(index, int):
+                    self.error(f"List index must be integer, got {type(index).__name__}", instruction)
+                
+                if index < 0 or index >= len(collection):
+                    self.error(f"Index {index} out of bounds for collection of length {len(collection)}", instruction)
+                
+                collection[index] = value
+                self.push(value)  # Return the set value
+            # Handle dictionary-like objects
+            elif isinstance(collection, dict):
+                collection[index] = value
+                self.push(value)  # Return the set value
+            else:
+                self.error(f"Cannot set index on {type(collection).__name__}", instruction)
+        
         elif opcode == OpCode.CALL_FUNC:
             # Call function with proper frame management
             func_address = operand
@@ -297,10 +440,10 @@ class KorlanVM:
             args.reverse()  # Put them back in correct order
             
             try:
-                result = self.native_methods.call_function(native_func_name, args)
+                result = self.native_bridge.call_function(native_func_name, args)
                 self.push(result)
-            except NativeError as e:
-                self.error(f"[Korlan Error] Native function '{native_func_name}' failed: {e.message}", instruction)
+            except KorlanVMError as e:
+                self.error(e.message, instruction, e.line, e.column, e.code_snippet)
         
         elif opcode == OpCode.RETURN:
             # Return from function with proper frame cleanup
@@ -321,18 +464,6 @@ class KorlanVM:
                 self.ip = operand - 1  # -1 because we increment at end of loop
         
         elif opcode == OpCode.JUMP_IF_TRUE:
-            # Conditional jump (pop condition, jump if true)
-            condition = self.pop()
-            if self.is_truthy(condition):
-                self.ip = operand - 1  # -1 because we increment at end of loop
-        
-        # Binary operations
-        elif opcode == OpCode.ADD:
-            right = self.pop()
-            left = self.pop()
-            self.push(self.add(left, right))
-        
-        elif opcode == OpCode.SUBTRACT:
             right = self.pop()
             left = self.pop()
             self.push(self.subtract(left, right))
@@ -426,10 +557,14 @@ class KorlanVM:
             for i, frame in enumerate(self.call_stack):
                 print(f"  Frame {i}: {frame.function_name} (base: {frame.stack_base})")
                 print(f"    Locals: {frame.locals}")
+                if hasattr(frame, 'operand_stack'):
+                    print(f"    Operand Stack: {frame.operand_stack}")
                 if frame.parent_frame:
                     print(f"    Parent: {frame.parent_frame.function_name}")
             print(f"Globals: {self.globals}")
             print(f"Current frame: {self.current_frame.function_name if self.current_frame else 'None'}")
+            if self.current_frame and hasattr(self.current_frame, 'operand_stack'):
+                print(f"Current frame operand stack: {self.current_frame.operand_stack}")
             print("======================")
         
         elif opcode == OpCode.HALT:
@@ -463,13 +598,13 @@ class KorlanVM:
         elif isinstance(left, str) and isinstance(right, str):
             return left + right
         else:
-            raise KVMError(f"Cannot add {type(left)} and {type(right)}")
+            raise KorlanVMError(f"Cannot add {type(left)} and {type(right)}")
     
     def subtract(self, left: Any, right: Any) -> Any:
         if isinstance(left, (int, float)) and isinstance(right, (int, float)):
             return left - right
         else:
-            raise KVMError(f"Cannot subtract {type(right)} from {type(left)}")
+            raise KorlanVMError(f"Cannot subtract {type(right)} from {type(left)}")
     
     def multiply(self, left: Any, right: Any) -> Any:
         if isinstance(left, (int, float)) and isinstance(right, (int, float)):
@@ -477,21 +612,21 @@ class KorlanVM:
         elif isinstance(left, str) and isinstance(right, int):
             return left * right
         else:
-            raise KVMError(f"Cannot multiply {type(left)} and {type(right)}")
+            raise KorlanVMError(f"Cannot multiply {type(left)} and {type(right)}")
     
     def divide(self, left: Any, right: Any) -> Any:
         if isinstance(left, (int, float)) and isinstance(right, (int, float)):
             if right == 0:
-                raise KVMError("Division by zero")
+                raise KorlanVMError("Division by zero")
             return left / right
         else:
-            raise KVMError(f"Cannot divide {type(left)} by {type(right)}")
+            raise KorlanVMError(f"Cannot divide {type(left)} by {type(right)}")
     
     def modulo(self, left: Any, right: Any) -> Any:
         if isinstance(left, int) and isinstance(right, int):
             return left % right
         else:
-            raise KVMError(f"Cannot modulo {type(left)} by {type(right)}")
+            raise KorlanVMError(f"Cannot modulo {type(left)} by {type(right)}")
     
     # Comparison operations
     def equals(self, left: Any, right: Any) -> bool:
@@ -501,13 +636,13 @@ class KorlanVM:
         if isinstance(left, (int, float, str)) and isinstance(right, (int, float, str)):
             return left < right
         else:
-            raise KVMError(f"Cannot compare {type(left)} and {type(right)}")
+            raise KorlanVMError(f"Cannot compare {type(left)} and {type(right)}")
     
     def greater_than(self, left: Any, right: Any) -> bool:
         if isinstance(left, (int, float, str)) and isinstance(right, (int, float, str)):
             return left > right
         else:
-            raise KVMError(f"Cannot compare {type(left)} and {type(right)}")
+            raise KorlanVMError(f"Cannot compare {type(left)} and {type(right)}")
     
     def less_equals(self, left: Any, right: Any) -> bool:
         return left <= right

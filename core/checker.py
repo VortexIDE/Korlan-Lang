@@ -51,24 +51,31 @@ class Symbol:
     line: int = 0
     column: int = 0
 
-class KorlanError(Exception):
-    """Korlan-specific error with line and column information"""
-    def __init__(self, message: str, line: int, column: int, error_type: str = "Error"):
+class KorlanSemanticError(Exception):
+    """Korlan-specific semantic error with line and code snippet"""
+    def __init__(self, message: str, line: int, column: int, error_type: str = "Semantic Error", code_snippet: str = ""):
         self.message = message
         self.line = line
         self.column = column
         self.error_type = error_type
-        super().__init__(f"Korlan {error_type} at line {line}, column {column}: {message}")
+        self.code_snippet = code_snippet
+        
+        error_msg = f"{error_type} at line {line}, column {column}: {message}"
+        if code_snippet:
+            error_msg += f"\nCode: {code_snippet}"
+        super().__init__(error_msg)
 
-class SemanticChecker:
-    """Performs semantic analysis on the AST"""
+class SemanticAnalyzer:
+    """Enhanced semantic analyzer with strict mutability and null safety rules"""
     
     def __init__(self):
         self.symbols: Dict[str, Symbol] = {}  # Current scope symbols
         self.global_symbols: Dict[str, Symbol] = {}  # Global scope symbols
         self.function_stack: List[Dict[str, Symbol]] = []  # Function call stack
         self.current_function: Optional[str] = None
-        self.errors: List[KorlanError] = []
+        self.errors: List[KorlanSemanticError] = []
+        self.current_line = 0
+        self.current_column = 0
         
         # Built-in function signatures
         self.builtins = {
@@ -81,9 +88,14 @@ class SemanticChecker:
             "builtin_to_string": Type.FUNCTION,
         }
     
-    def add_error(self, message: str, node: ASTNode, error_type: str = "Error"):
-        """Add a Korlan error with line/column information"""
-        error = KorlanError(message, node.line, node.column, error_type)
+    def add_error(self, message: str, node: ASTNode, error_type: str = "Semantic Error"):
+        """Add a Korlan semantic error with line/column information and code snippet"""
+        # Extract code snippet if available
+        code_snippet = ""
+        if hasattr(node, 'value') and node.value:
+            code_snippet = str(node.value)
+        
+        error = KorlanSemanticError(message, node.line, node.column, error_type, code_snippet)
         self.errors.append(error)
     
     def check(self, ast: ASTNode) -> bool:
@@ -91,11 +103,14 @@ class SemanticChecker:
         try:
             self.check_node(ast)
             return len(self.errors) == 0
-        except KorlanError:
+        except KorlanSemanticError:
             return False
     
     def check_node(self, node: ASTNode):
         """Check an AST node for semantic issues"""
+        self.current_line = node.line
+        self.current_column = node.column
+        
         if node.type == NodeType.PROGRAM:
             self.check_program(node)
         elif node.type == NodeType.FUNCTION:
@@ -135,11 +150,11 @@ class SemanticChecker:
         """Declare a function symbol"""
         func_name = node.value
         if func_name in self.symbols:
-            self.add_error(f"Function '{func_name}' already declared", node, "Error")
+            self.add_error(f"Function '{func_name}' already declared", node, "Declaration Error")
             return
         
         # Create function symbol
-        symbol = Symbol(func_name, Type.FUNCTION, False, node, node.line, node.column)
+        symbol = Symbol(func_name, Type.FUNCTION, False, False, True, node, node.line, node.column)
         self.symbols[func_name] = symbol
         self.global_symbols[func_name] = symbol
     
@@ -166,7 +181,7 @@ class SemanticChecker:
         self.current_function = None
     
     def check_variable(self, node: ASTNode):
-        """Check variable declaration"""
+        """Check variable declaration with strict mutability rules"""
         var_name = node.value
         is_mutable = var_name.startswith("mut ")
         
@@ -175,7 +190,7 @@ class SemanticChecker:
         
         # Check if variable already exists in current scope
         if var_name in self.symbols:
-            self.add_error(f"Variable '{var_name}' already declared in current scope", node, "Error")
+            self.add_error(f"Variable '{var_name}' already declared in current scope", node, "Declaration Error")
             return
         
         # Parse type annotation if present
@@ -207,7 +222,7 @@ class SemanticChecker:
                 var_type = self.infer_type(initializer)
                 self.check_node(initializer)
                 
-                # Check null safety of initializer
+                # **RULE 2: Null Safety** - Check null safety of initializer
                 if not is_nullable and self.could_be_null(initializer):
                     self.add_error(f"Cannot assign potentially null value to non-nullable variable '{var_name}'", node, "Null Safety Error")
         
@@ -230,9 +245,9 @@ class SemanticChecker:
             self.check_node(child)
     
     def check_binary(self, node: ASTNode):
-        """Check binary expression for type consistency"""
+        """Check binary expression for type consistency and null safety"""
         if len(node.children) != 2:
-            self.add_error("Binary expression must have exactly 2 children", node, "Error")
+            self.add_error("Binary expression must have exactly 2 children", node, "Type Error")
             return
         
         left, right = node.children
@@ -271,7 +286,7 @@ class SemanticChecker:
         
         # Check if function exists
         if func_name not in self.symbols and func_name not in self.builtins:
-            self.add_error(f"Undefined function: {func_name}", node, "Error")
+            self.add_error(f"Undefined function: {func_name}", node, "Reference Error")
             return
         
         # Check arguments
@@ -281,7 +296,7 @@ class SemanticChecker:
     def check_pipeline(self, node: ASTNode):
         """Check pipeline expression"""
         if len(node.children) < 2:
-            self.add_error("Pipeline must have at least 2 children", node, "Error")
+            self.add_error("Pipeline must have at least 2 children", node, "Syntax Error")
             return
         
         # Check initial value
@@ -291,7 +306,7 @@ class SemanticChecker:
         for i in range(1, len(node.children)):
             transform = node.children[i]
             if transform.type != NodeType.CALL:
-                self.add_error("Pipeline transformations must be function calls", transform, "Error")
+                self.add_error("Pipeline transformations must be function calls", transform, "Type Error")
                 return
             self.check_node(transform)
     
@@ -301,53 +316,59 @@ class SemanticChecker:
         pass
     
     def check_identifier(self, node: ASTNode):
-        """Check identifier access"""
+        """Check identifier access with null safety"""
         var_name = node.value
         
         # Check if variable exists
         if var_name not in self.symbols:
-            self.add_error(f"Undefined variable: {var_name}", node, "Error")
+            self.add_error(f"Undefined variable: {var_name}", node, "Reference Error")
             return
         
         symbol = self.symbols[var_name]
         
         # Check if variable is initialized
         if not symbol.is_initialized:
-            self.add_error(f"Use of uninitialized variable: {var_name}", node, "Error")
+            self.add_error(f"Use of uninitialized variable: {var_name}", node, "Initialization Error")
         
-        # Check null safety for non-nullable variables
+        # **RULE 2: Null Safety** - Check null safety for non-nullable variables
         if not symbol.is_nullable and self.could_be_null(node):
             self.add_error(f"Variable '{var_name}' is non-nullable but could be null", node, "Null Safety Error")
     
     def check_assignment(self, node: ASTNode):
-        """Check assignment for mut violations"""
+        """Check assignment for **RULE 1: Mutability violations**"""
         if len(node.children) != 2:
-            self.add_error("Assignment must have exactly 2 children", node, "Error")
+            self.add_error("Assignment must have exactly 2 children", node, "Syntax Error")
             return
         
         target, value = node.children
         
         if target.type != NodeType.IDENTIFIER:
-            self.add_error("Assignment target must be an identifier", target, "Error")
+            self.add_error("Assignment target must be an identifier", target, "Syntax Error")
             return
         
         var_name = target.value
         
         # Check if variable exists
         if var_name not in self.symbols:
-            self.add_error(f"Undefined variable: {var_name}", target, "Error")
+            self.add_error(f"Undefined variable: {var_name}", target, "Reference Error")
             return
         
-        # Check if variable is mutable (THIS IS THE KEY CHECK)
+        # **RULE 1: Mutability Check** - This is the core rule
         symbol = self.symbols[var_name]
         if not symbol.is_mutable:
-            self.add_error(f"Cannot assign to immutable variable '{var_name}'. Use 'mut' to make it mutable.", target, "Mutability Error")
+            code_snippet = f"{var_name} = ..."  # Show the assignment pattern
+            self.add_error(
+                f"Cannot assign to immutable variable '{var_name}'. Use 'mut {var_name}' to make it mutable.", 
+                target, 
+                "Mutability Error",
+                code_snippet
+            )
             return
         
         # Check value
         self.check_node(value)
         
-        # Check null safety for assignment
+        # **RULE 2: Null Safety** - Check null safety for assignment
         if not symbol.is_nullable and self.could_be_null(value):
             self.add_error(f"Cannot assign potentially null value to non-nullable variable '{var_name}'", node, "Null Safety Error")
         
@@ -442,12 +463,12 @@ class SemanticChecker:
             for child in node.children:
                 self.check_null_safety_in_operation(child, operation)
     
-    def get_errors(self) -> List[KorlanError]:
+    def get_errors(self) -> List[KorlanSemanticError]:
         """Get all semantic errors"""
         return self.errors
     
     def print_errors(self):
-        """Print all errors in a user-friendly format"""
+        """Print all errors in a user-friendly format with code snippets"""
         if not self.errors:
             print("✅ No semantic errors found")
             return
@@ -455,6 +476,8 @@ class SemanticChecker:
         print(f"❌ Found {len(self.errors)} semantic error(s):")
         for error in self.errors:
             print(f"  {error.error_type} at line {error.line}, column {error.column}: {error.message}")
+            if error.code_snippet:
+                print(f"    Code: {error.code_snippet}")
     
     def print_symbols(self):
         """Debug method to print symbols"""
@@ -514,17 +537,17 @@ fun main() {
         ast = parser.parse()
         
         # Check semantics
-        checker = SemanticChecker()
-        success = checker.check(ast)
+        analyzer = SemanticAnalyzer()
+        success = analyzer.check(ast)
         
-        checker.print_errors()
+        analyzer.print_errors()
         
         if success:
             print("✅ Semantic analysis passed")
         else:
             print("❌ Semantic analysis failed")
         
-        checker.print_symbols()
+        analyzer.print_symbols()
 
 if __name__ == "__main__":
     main()
