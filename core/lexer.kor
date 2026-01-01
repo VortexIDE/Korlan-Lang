@@ -1,0 +1,391 @@
+# Korlan Lexer - The Eyes of the Language
+# Converts Korlan source code into tokens with zero-ceremony syntax enforcement.
+
+# Token types - using enum-like constants
+const FUN = "FUN"
+const MUT = "MUT"
+const CLASS = "CLASS"
+const IF = "IF"
+const MATCH = "MATCH"
+const SPAWN = "SPAWN"
+const INIT = "INIT"
+const ELSE = "ELSE"
+const WHILE = "WHILE"
+const FOR = "FOR"
+const RETURN = "RETURN"
+const BREAK = "BREAK"
+const CONTINUE = "CONTINUE"
+const NULL = "NULL"
+
+# Operators
+const FUNCTION_ARROW = "FUNCTION_ARROW"      # ->
+const SINGLE_EXPR_ARROW = "SINGLE_EXPR_ARROW"  # =>
+const NULL_SAFETY = "NULL_SAFETY"           # ?
+const ASSIGN = "ASSIGN"                     # =
+const EQUALS = "EQUALS"                     # ==
+const NOT_EQUALS = "NOT_EQUALS"             # !=
+const LESS_THAN = "LESS_THAN"               # <
+const GREATER_THAN = "GREATER_THAN"         # >
+const LESS_EQUALS = "LESS_EQUALS"           # <=
+const GREATER_EQUALS = "GREATER_EQUALS"     # >=
+const PLUS = "PLUS"                         # +
+const MINUS = "MINUS"                       # *
+const MULTIPLY = "MULTIPLY"                 # *
+const DIVIDE = "DIVIDE"                     # /
+const MODULO = "MODULO"                     # %
+const AND = "AND"                           # &&
+const OR = "OR"                            # ||
+const NOT = "NOT"                           # !
+
+# Delimiters
+const LEFT_PAREN = "LEFT_PAREN"             # (
+const RIGHT_PAREN = "RIGHT_PAREN"           # )
+const LEFT_BRACE = "LEFT_BRACE"             # {
+const RIGHT_BRACE = "RIGHT_BRACE"           # }
+const LEFT_BRACKET = "LEFT_BRACKET"         # [
+const RIGHT_BRACKET = "RIGHT_BRACKET"       # ]
+const COMMA = "COMMA"                       # ,
+const DOT = "DOT"                           # .
+const COLON = "COLON"                       # :
+
+# Literals and Identifiers
+const IDENTIFIER = "IDENTIFIER"
+const NUMBER = "NUMBER"
+const STRING = "STRING"
+const BOOLEAN = "BOOLEAN"
+
+# Special
+const NEWLINE = "NEWLINE"
+const INDENT = "INDENT"
+const DEDENT = "DEDENT"
+const EOF = "EOF"
+const ILLEGAL = "ILLEGAL"
+
+# Token structure
+struct Token {
+    type: String
+    value: String
+    line: Int
+    column: Int
+}
+
+# Lexer class
+class KorlanLexer {
+    source: String
+    position: Int
+    line: Int
+    column: Int
+    tokens: Array<Token>
+    
+    # Token specifications - simplified for Korlan
+    # In a real implementation, these would be regex patterns
+    token_specs: Array<Array<String>>
+    
+    # Keywords map
+    keywords: Map<String, String>
+    
+    init(source: String) {
+        self.source = source
+        self.position = 0
+        self.line = 1
+        self.column = 1
+        self.tokens = []
+        
+        # Simplified token patterns for demonstration
+        self.token_specs = [
+            ["->", FUNCTION_ARROW],
+            ["=>", SINGLE_EXPR_ARROW],
+            ["==", EQUALS],
+            ["!=", NOT_EQUALS],
+            ["<=", LESS_EQUALS],
+            [">=", GREATER_EQUALS],
+            ["&&", AND],
+            ["||", OR],
+            ["(", LEFT_PAREN],
+            [")", RIGHT_PAREN],
+            ["{", LEFT_BRACE],
+            ["}", RIGHT_BRACE],
+            ["[", LEFT_BRACKET],
+            ["]", RIGHT_BRACKET],
+            [",", COMMA],
+            [".", DOT],
+            [":", COLON],
+            ["?", NULL_SAFETY],
+            ["=", ASSIGN],
+            ["<", LESS_THAN],
+            [">", GREATER_THAN],
+            ["+", PLUS],
+            ["-", MINUS],
+            ["*", MULTIPLY],
+            ["/", DIVIDE],
+            ["%", MODULO],
+            ["!", NOT]
+        ]
+        
+        # Keywords
+        self.keywords = {
+            "fun": FUN,
+            "mut": MUT,
+            "class": CLASS,
+            "if": IF,
+            "match": MATCH,
+            "spawn": SPAWN,
+            "init": INIT,
+            "else": ELSE,
+            "while": WHILE,
+            "for": FOR,
+            "return": RETURN,
+            "break": BREAK,
+            "continue": CONTINUE,
+            "null": NULL,
+            "true": BOOLEAN,
+            "false": BOOLEAN
+        }
+    }
+    
+    fun error(message: String) -> String {
+        return "Lexer Error at line " + self.line.toString() + ", column " + self.column.toString() + ": " + message
+    }
+    
+    fun currentChar() -> String? {
+        if self.position >= self.source.length {
+            return null
+        }
+        return self.source[self.position].toString()
+    }
+    
+    fun advance() -> String? {
+        let char = self.currentChar()
+        if char != null {
+            self.position = self.position + 1
+            if char == "\n" {
+                self.line = self.line + 1
+                self.column = 1
+            } else {
+                self.column = self.column + 1
+            }
+        }
+        return char
+    }
+    
+    fun peekChar(offset: Int = 0) -> String? {
+        let peekPos = self.position + offset
+        if peekPos >= self.source.length {
+            return null
+        }
+        return self.source[peekPos].toString()
+    }
+    
+    fun skipWhitespace() {
+        while (let char = self.currentChar()) && char.isspace() {
+            if char == "\n" {
+                self.tokens.append(Token(type: NEWLINE, value: char, line: self.line, column: self.column))
+            }
+            self.advance()
+        }
+    }
+    
+    fun skipComment() {
+        let current = self.currentChar()
+        let next = self.peekChar()
+        if current == "/" && next == "/" {
+            while (let char = self.advance()) && char != "\n" {
+                # Skip line comment
+            }
+        } else if current == "#" {
+            # Skip hash comments (for self-hosted lexer compatibility)
+            while (let char = self.advance()) && char != "\n" {
+                # Skip hash comment
+            }
+        }
+    }
+    
+    fun checkForSemicolon() {
+        # Enforce zero-ceremony: throw error if semicolon found
+        if self.currentChar() == ";" {
+            return self.error("Ceremony Error: Semicolons are not allowed in Korlan. Remove the semicolon and embrace simplicity!")
+        }
+        return null
+    }
+    
+    fun readString(quoteChar: String) -> String {
+        let startLine = self.line
+        let startColumn = self.column
+        self.advance()  # Skip opening quote
+        
+        var stringValue = ""
+        while (let char = self.currentChar()) && char != quoteChar {
+            if char == "\\" {  # Escape sequence
+                self.advance()
+                let escapedChar = self.currentChar()
+                if escapedChar == null {
+                    return self.error("Unterminated string literal") ?? "Error"
+                }
+                
+                # Handle escape sequences
+                if escapedChar == "n" {
+                    stringValue = stringValue + "\n"
+                } else if escapedChar == "t" {
+                    stringValue = stringValue + "\t"
+                } else if escapedChar == "r" {
+                    stringValue = stringValue + "\r"
+                } else if escapedChar == "\\" {
+                    stringValue = stringValue + "\\"
+                } else if escapedChar == "\"" {
+                    stringValue = stringValue + "\""
+                } else if escapedChar == "'" {
+                    stringValue = stringValue + "'"
+                } else {
+                    stringValue = stringValue + escapedChar
+                }
+                self.advance()
+            } else {
+                stringValue = stringValue + char
+                self.advance()
+            }
+        }
+        
+        if self.currentChar() != quoteChar {
+            return self.error("Unterminated string literal (missing closing " + quoteChar + ")") ?? "Error"
+        }
+        
+        self.advance()  # Skip closing quote
+        return stringValue
+    }
+    
+    fun readNumber() -> String {
+        let startPos = self.position
+        while (let char = self.currentChar()) && (char.isdigit() || char == ".") {
+            self.advance()
+        }
+        
+        return self.source[startPos..<self.position]
+    }
+    
+    fun readIdentifier() -> String {
+        let startPos = self.position
+        while (let char = self.currentChar()) && (char.isalnum() || char == "_") {
+            self.advance()
+        }
+        
+        return self.source[startPos..<self.position]
+    }
+    
+    fun tokenize() -> Array<Token> {
+        # Main tokenization method
+        while self.position < self.source.length {
+            self.skipWhitespace()
+            
+            if self.position >= self.source.length {
+                break
+            }
+            
+            let currentChar = self.currentChar()
+            
+            # Check for ceremony errors
+            let semicolonError = self.checkForSemicolon()
+            if semicolonError != null {
+                # In a real implementation, this would throw an exception
+                print(semicolonError)
+                return []
+            }
+            
+            # Skip comments
+            self.skipComment()
+            if self.position >= self.source.length {
+                break
+            }
+            
+            # Try to match token patterns
+            var tokenFound = false
+            
+            # Check for strings first (they have higher priority)
+            if currentChar == "\"" || currentChar == "'" {
+                let value = self.readString(currentChar ?? "")
+                let token = Token(type: STRING, value: value, line: self.line, column: self.column - value.length)
+                self.tokens.append(token)
+                tokenFound = true
+            } else {
+                # Check multi-character operators first
+                for spec in self.token_specs {
+                    let pattern = spec[0]
+                    let tokenType = spec[1]
+                    
+                    if self.source.hasPrefix(pattern, at: self.position) {
+                        let value = pattern
+                        let token = Token(type: tokenType, value: value, line: self.line, column: self.column - value.length + 1)
+                        self.tokens.append(token)
+                        
+                        # Update position
+                        self.position = self.position + value.length
+                        
+                        # Update line/column for multi-character tokens
+                        for char in value {
+                            if char == "\n" {
+                                self.line = self.line + 1
+                                self.column = 1
+                            } else {
+                                self.column = self.column + 1
+                            }
+                        }
+                        
+                        tokenFound = true
+                        break
+                    }
+                }
+                
+                if !tokenFound {
+                    # Check for numbers
+                    if currentChar != nil && currentChar!.isdigit() {
+                        let value = self.readNumber()
+                        let token = Token(type: NUMBER, value: value, line: self.line, column: self.column - value.length)
+                        self.tokens.append(token)
+                        tokenFound = true
+                    } else if currentChar != nil && (currentChar!.isalpha() || currentChar == "_") {
+                        # Identifiers and keywords
+                        let value = self.readIdentifier()
+                        let tokenType = self.keywords[value] ?? IDENTIFIER
+                        let token = Token(type: tokenType, value: value, line: self.line, column: self.column - value.length)
+                        self.tokens.append(token)
+                        tokenFound = true
+                    } else {
+                        let error = self.error("Unexpected character: '" + (currentChar ?? "") + "'")
+                        print(error)
+                        return []
+                    }
+                }
+            }
+        }
+        
+        # Add EOF token
+        self.tokens.append(Token(type: EOF, value: "", line: self.line, column: self.column))
+        
+        return self.tokens
+    }
+    
+    fun printTokens() {
+        # Debug method to print all tokens
+        for i in 0..<self.tokens.length {
+            let token = self.tokens[i]
+            print(i.toString().padLeft(3) + ": " + token.type.padRight(15) + " '" + token.value + "' (line " + token.line.toString() + ", col " + token.column.toString() + ")")
+        }
+    }
+}
+
+# Test function
+fun main() {
+    let sampleCode = '''
+fun main() {
+    print("Hello, Korlan!")
+}
+'''
+    
+    print("=== Korlan Lexer Test ===")
+    print("Input code:")
+    print(sampleCode)
+    print("\nTokens:")
+    
+    let lexer = KorlanLexer(source: sampleCode)
+    let tokens = lexer.tokenize()
+    lexer.printTokens()
+}

@@ -65,8 +65,8 @@ class KorlanSemanticError(Exception):
             error_msg += f"\nCode: {code_snippet}"
         super().__init__(error_msg)
 
-class SemanticAnalyzer:
-    """Enhanced semantic analyzer with strict mutability and null safety rules"""
+class StaticAnalyzer:
+    """Enhanced static analyzer with strict null safety and const checking"""
     
     def __init__(self):
         self.symbols: Dict[str, Symbol] = {}  # Current scope symbols
@@ -88,7 +88,7 @@ class SemanticAnalyzer:
             "builtin_to_string": Type.FUNCTION,
         }
     
-    def add_error(self, message: str, node: ASTNode, error_type: str = "Semantic Error"):
+    def add_error(self, message: str, node: ASTNode, error_type: str = "Static Analysis Error"):
         """Add a Korlan semantic error with line/column information and code snippet"""
         # Extract code snippet if available
         code_snippet = ""
@@ -190,8 +190,26 @@ class SemanticAnalyzer:
         
         # Check if variable already exists in current scope
         if var_name in self.symbols:
-            self.add_error(f"Variable '{var_name}' already declared in current scope", node, "Declaration Error")
-            return
+            # If variable already exists, treat this as an assignment, not declaration
+            symbol = self.symbols[var_name]
+            if not symbol.is_mutable:
+                code_snippet = f"{var_name} = ..."  # Show the assignment pattern
+                self.add_error(
+                    f"Cannot assign to immutable variable '{var_name}'. Use 'mut {var_name}' to make it mutable.", 
+                    node, 
+                    "Const-Checking Error"
+                )
+                return
+            else:
+                # This is a valid assignment to a mutable variable
+                # Check the initializer as assignment value
+                if len(node.children) > 0:
+                    # Find the last child that's not a type annotation
+                    for child in reversed(node.children):
+                        if child.type != NodeType.IDENTIFIER or not hasattr(child, 'value') or not isinstance(child.value, str) or not child.value[0].isupper():
+                            self.check_node(child)
+                            break
+                return
         
         # Parse type annotation if present
         var_type = Type.UNKNOWN
@@ -335,7 +353,7 @@ class SemanticAnalyzer:
             self.add_error(f"Variable '{var_name}' is non-nullable but could be null", node, "Null Safety Error")
     
     def check_assignment(self, node: ASTNode):
-        """Check assignment for **RULE 1: Mutability violations**"""
+        """Check assignment for const-checking (RULE 1: Mutability violations)"""
         if len(node.children) != 2:
             self.add_error("Assignment must have exactly 2 children", node, "Syntax Error")
             return
@@ -353,14 +371,14 @@ class SemanticAnalyzer:
             self.add_error(f"Undefined variable: {var_name}", target, "Reference Error")
             return
         
-        # **RULE 1: Mutability Check** - This is the core rule
+        # **RULE 1: Const-Checking** - This is the core rule
         symbol = self.symbols[var_name]
         if not symbol.is_mutable:
             code_snippet = f"{var_name} = ..."  # Show the assignment pattern
             self.add_error(
                 f"Cannot assign to immutable variable '{var_name}'. Use 'mut {var_name}' to make it mutable.", 
                 target, 
-                "Mutability Error",
+                "Const-Checking Error",
                 code_snippet
             )
             return
@@ -537,7 +555,7 @@ fun main() {
         ast = parser.parse()
         
         # Check semantics
-        analyzer = SemanticAnalyzer()
+        analyzer = StaticAnalyzer()
         success = analyzer.check(ast)
         
         analyzer.print_errors()

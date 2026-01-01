@@ -1,0 +1,4 @@
+fun main() {
+    x = 5  # Should error - not declared with mut
+    x = 10
+}

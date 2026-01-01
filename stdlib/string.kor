@@ -1,188 +1,346 @@
-// Korlan Standard Library - String Operations
-// Essential string manipulation functions for the Lexer
+# Korlan Standard Library - String Operations
+# Essential string manipulation functions with @extern annotations
 
-// Get character at position
-fun char_at(s: String, index: Int) -> String {
-    if index < 0 or index >= length(s) {
-        return ""
-    }
-    // This will be implemented as a built-in in the VM
-    builtin_char_at(s, index)
+# Core string functions (linked to C string library)
+@extern
+fun strlen(str: String) -> Int {
+    # Get string length
+    # Links to C strlen()
 }
 
-// Get string length
+@extern
+fun strcpy(dest: String, src: String) -> String {
+    # Copy string
+    # Links to C strcpy()
+}
+
+@extern
+fun strcat(dest: String, src: String) -> String {
+    # Concatenate strings
+    # Links to C strcat()
+}
+
+@extern
+fun strcmp(str1: String, str2: String) -> Int {
+    # Compare strings (returns <0, 0, >0)
+    # Links to C strcmp()
+}
+
+@extern
+fun strncmp(str1: String, str2: String, count: Int) -> Int {
+    # Compare first n characters
+    # Links to C strncmp()
+}
+
+@extern
+fun strstr(haystack: String, needle: String) -> String {
+    # Find substring
+    # Links to C strstr()
+}
+
+@extern
+fun strchr(str: String, c: Char) -> String {
+    # Find character in string
+    # Links to C strchr()
+}
+
+@extern
+fun strrchr(str: String, c: Char) -> String {
+    # Find last occurrence of character
+    # Links to C strrchr()
+}
+
+@extern
+fun memcpy(dest: Void*, src: Void*, count: Int) -> Void* {
+    # Copy memory block
+    # Links to C memcpy()
+}
+
+@extern
+fun memmove(dest: Void*, src: Void*, count: Int) -> Void* {
+    # Move memory block (handles overlap)
+    # Links to C memmove()
+}
+
+@extern
+fun memset(ptr: Void*, value: Int, count: Int) -> Void* {
+    # Set memory block
+    # Links to C memset()
+}
+
+@extern
+fun memcmp(ptr1: Void*, ptr2: Void*, count: Int) -> Int {
+    # Compare memory blocks
+    # Links to C memcmp()
+}
+
+# High-level string operations
 fun length(s: String) -> Int {
-    // This will be implemented as a built-in in the VM
-    builtin_length(s)
+    return strlen(s)
 }
 
-// Check if string starts with prefix
-fun starts_with(s: String, prefix: String) -> Bool {
-    if length(prefix) > length(s) {
-        return false
+fun char_at(s: String, index: Int) -> Char {
+    if index < 0 or index >= length(s) {
+        return '\0'  # Null character
     }
-    
-    let i = 0
-    while i < length(prefix) {
-        if char_at(s, i) != char_at(prefix, i) {
-            return false
-        }
-        i = i + 1
-    }
-    true
+    return s[index].toChar()
 }
 
-// Check if string ends with suffix
-fun ends_with(s: String, suffix: String) -> Bool {
-    if length(suffix) > length(s) {
-        return false
-    }
-    
-    let start = length(s) - length(suffix)
-    let i = 0
-    while i < length(suffix) {
-        if char_at(s, start + i) != char_at(suffix, i) {
-            return false
-        }
-        i = i + 1
-    }
-    true
-}
-
-// Split string by delimiter
-fun split(s: String, delimiter: String) -> List<String> {
-    let result = []
-    let current = ""
-    let i = 0
-    
-    while i < length(s) {
-        let found = true
-        let j = 0
-        
-        // Check if delimiter matches at current position
-        while j < length(delimiter) and i + j < length(s) {
-            if char_at(s, i + j) != char_at(delimiter, j) {
-                found = false
-                break
-            }
-            j = j + 1
-        }
-        
-        if found and j == length(delimiter) {
-            // Add current part to result
-            if length(current) > 0 {
-                result = result + [current]
-                current = ""
-            }
-            i = i + length(delimiter)
-        } else {
-            // Add character to current part
-            current = current + char_at(s, i)
-            i = i + 1
-        }
-    }
-    
-    // Add final part
-    if length(current) > 0 {
-        result = result + [current]
-    }
-    
-    result
-}
-
-// Join list of strings with delimiter
-fun join(strings: List<String>, delimiter: String) -> String {
-    if length(strings) == 0 {
+fun substring(s: String, start: Int, length: Int) -> String {
+    if start < 0 or length < 0 or start >= strlen(s) {
         return ""
     }
     
-    let result = strings[0]
-    let i = 1
-    
-    while i < length(strings) {
-        result = result + delimiter + strings[i]
-        i = i + 1
+    let end = start + length
+    if end > strlen(s) {
+        end = strlen(s)
     }
     
-    result
+    # Create new string from substring
+    let result = malloc(length + 1)
+    memcpy(result, s + start, length)
+    result[length] = '\0'
+    
+    return result.toString()
 }
 
-// Trim whitespace from start and end
+fun starts_with(s: String, prefix: String) -> Bool {
+    if strlen(prefix) > strlen(s) {
+        return false
+    }
+    
+    return strncmp(s, prefix, strlen(prefix)) == 0
+}
+
+fun ends_with(s: String, suffix: String) -> Bool {
+    let s_len = strlen(s)
+    let suffix_len = strlen(suffix)
+    
+    if suffix_len > s_len {
+        return false
+    }
+    
+    return strcmp(s + (s_len - suffix_len), suffix) == 0
+}
+
+fun contains(s: String, needle: String) -> Bool {
+    return strstr(s, needle) != null
+}
+
+fun index_of(s: String, needle: String) -> Int {
+    let result = strstr(s, needle)
+    if result == null {
+        return -1
+    }
+    return result - s  # Pointer arithmetic to get index
+}
+
+fun last_index_of(s: String, needle: String) -> Int {
+    let result = strrchr(s, needle[0])
+    if result == null {
+        return -1
+    }
+    return result - s
+}
+
+fun split(s: String, delimiter: String) -> Array<String> {
+    let result = []
+    let current = s
+    let delim_len = strlen(delimiter)
+    
+    while strlen(current) > 0 {
+        let pos = strstr(current, delimiter)
+        if pos == null {
+            result.append(current)
+            break
+        }
+        
+        let part_len = pos - current
+        let part = substring(current, 0, part_len)
+        result.append(part)
+        
+        current = pos + delim_len
+    }
+    
+    return result
+}
+
+fun join(strings: Array<String>, delimiter: String) -> String {
+    if strings.length == 0 {
+        return ""
+    }
+    
+    # Calculate total length
+    let total_len = 0
+    for i in 0..<strings.length {
+        total_len = total_len + strlen(strings[i])
+    }
+    total_len = total_len + (strings.length - 1) * strlen(delimiter)
+    
+    let result = malloc(total_len + 1)
+    let pos = result
+    
+    # Copy first string
+    strcpy(pos, strings[0])
+    pos = pos + strlen(strings[0])
+    
+    # Copy remaining strings with delimiter
+    for i in 1..<strings.length {
+        strcpy(pos, delimiter)
+        pos = pos + strlen(delimiter)
+        strcpy(pos, strings[i])
+        pos = pos + strlen(strings[i])
+    }
+    
+    return result.toString()
+}
+
 fun trim(s: String) -> String {
     let start = 0
-    let end = length(s) - 1
+    let end = strlen(s) - 1
     
-    // Find first non-whitespace character
+    # Find first non-whitespace character
     while start <= end and is_whitespace(char_at(s, start)) {
         start = start + 1
     }
     
-    // Find last non-whitespace character
+    # Find last non-whitespace character
     while end >= start and is_whitespace(char_at(s, end)) {
         end = end - 1
     }
     
-    // Extract substring
-    let result = ""
-    let i = start
-    while i <= end {
-        result = result + char_at(s, i)
-        i = i + 1
+    if start > end {
+        return ""
     }
     
-    result
+    return substring(s, start, end - start + 1)
 }
 
-// Check if character is whitespace
-fun is_whitespace(c: String) -> Bool {
-    c == " " or c == "\t" or c == "\n" or c == "\r"
-}
-
-// Check if character is digit
-fun is_digit(c: String) -> Bool {
-    c >= "0" and c <= "9"
-}
-
-// Check if character is letter
-fun is_letter(c: String) -> Bool {
-    (c >= "a" and c <= "z") or (c >= "A" and c <= "Z") or c == "_"
-}
-
-// Convert string to integer
-fun to_int(s: String) -> Int {
-    let result = 0
+fun to_upper(s: String) -> String {
+    let result = malloc(strlen(s) + 1)
     let i = 0
-    let negative = false
     
-    // Handle negative sign
-    if i < length(s) and char_at(s, i) == "-" {
-        negative = true
-        i = i + 1
-    }
-    
-    while i < length(s) {
+    while i < strlen(s) {
         let c = char_at(s, i)
-        if is_digit(c) {
-            result = result * 10 + (to_int_char(c) - to_int_char("0"))
+        if c >= 'a' and c <= 'z' {
+            result[i] = c - ('a' - 'A')
+        } else {
+            result[i] = c
         }
         i = i + 1
     }
     
-    if negative {
-        -result
-    } else {
-        result
+    result[i] = '\0'
+    return result.toString()
+}
+
+fun to_lower(s: String) -> String {
+    let result = malloc(strlen(s) + 1)
+    let i = 0
+    
+    while i < strlen(s) {
+        let c = char_at(s, i)
+        if c >= 'A' and c <= 'Z' {
+            result[i] = c + ('a' - 'A')
+        } else {
+            result[i] = c
+        }
+        i = i + 1
     }
+    
+    result[i] = '\0'
+    return result.toString()
 }
 
-// Convert character to integer (helper)
-fun to_int_char(c: String) -> Int {
-    // This will be implemented as a built-in in the VM
-    builtin_to_int_char(c)
+fun replace(s: String, old: String, new: String) -> String {
+    let first = strstr(s, old)
+    if first == null {
+        return s
+    }
+    
+    let before_len = first - s
+    let before = substring(s, 0, before_len)
+    let after = first + strlen(old)
+    
+    return before + new + replace(after, old, new)
 }
 
-// Convert integer to string
-fun to_string(n: Int) -> String {
-    // This will be implemented as a built-in in the VM
-    builtin_to_string(n)
+fun repeat(s: String, count: Int) -> String {
+    if count <= 0 {
+        return ""
+    }
+    
+    let result_len = strlen(s) * count
+    let result = malloc(result_len + 1)
+    let pos = result
+    
+    for i in 0..<count {
+        strcpy(pos, s)
+        pos = pos + strlen(s)
+    }
+    
+    return result.toString()
 }
+
+# Character utilities
+fun is_whitespace(c: Char) -> Bool {
+    c == ' ' or c == '\t' or c == '\n' or c == '\r'
+}
+
+fun is_digit(c: Char) -> Bool {
+    c >= '0' and c <= '9'
+}
+
+fun is_letter(c: Char) -> Bool {
+    (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_'
+}
+
+fun is_alphanumeric(c: Char) -> Bool {
+    is_letter(c) or is_digit(c)
+}
+
+# Type conversions
+fun to_int(s: String) -> Int {
+    return atoi(s)
+}
+
+fun to_float(s: String) -> Float {
+    return atof(s)
+}
+
+fun from_int(n: Int) -> String {
+    # Allocate enough space for max int (including sign and null)
+    let buffer = malloc(12)
+    sprintf(buffer, "%d", n)
+    return buffer.toString()
+}
+
+fun from_float(f: Float) -> String {
+    # Allocate enough space for float representation
+    let buffer = malloc(32)
+    sprintf(buffer, "%f", f)
+    return buffer.toString()
+}
+
+# External C functions needed
+@extern
+fun atoi(str: String) -> Int {
+    # Convert string to integer
+    # Links to C atoi()
+}
+
+@extern
+fun atof(str: String) -> Float {
+    # Convert string to float
+    # Links to C atof()
+}
+
+@extern
+fun sprintf(buffer: String, format: String, ...) -> Int {
+    # Formatted string output
+    # Links to C sprintf()
+}
+
+# Type aliases
+type Char = Int
+type Array<T> = Void*

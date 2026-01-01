@@ -1,0 +1,7 @@
+# Minimal Korlan Lexer - Bootstrap Demo
+# The simplest possible lexer that can be compiled to native code
+
+fun main() {
+    mut x = 42
+    print(x)
+}

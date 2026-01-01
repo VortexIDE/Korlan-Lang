@@ -137,7 +137,10 @@ class KorlanParser:
             return self.parse_variable(mutable=True)
         elif self.current_token and self.current_token.type == TokenType.IDENTIFIER:
             # Could be variable assignment or expression statement
-            if self.peek() and self.peek().type in [TokenType.ASSIGN, TokenType.COLON]:
+            if self.peek(1) and self.peek(1).type in [TokenType.ASSIGN, TokenType.COLON]:
+                # Check if this is a declaration or assignment
+                var_name = self.current_token.value
+                # For now, we'll treat all as declarations and let the checker handle redeclaration
                 return self.parse_variable(mutable=False)
             else:
                 expr = self.parse_expression()
@@ -277,6 +280,10 @@ class KorlanParser:
             # Handle arrow pipeline (lower precedence)
             if operator.type == TokenType.FUNCTION_ARROW:
                 left = self.parse_pipeline(left)
+            elif operator.type == TokenType.ASSIGN:
+                # Assignment should be handled specially
+                right = self.parse_expression(self.get_precedence(operator.type) + 1)
+                left = ASTNode(NodeType.ASSIGN, value=operator.value, children=[left, right], line=operator.line, column=operator.column)
             else:
                 right = self.parse_expression(self.get_precedence(operator.type) + 1)
                 left = ASTNode(NodeType.BINARY, value=operator.value, children=[left, right], line=operator.line, column=operator.column)
@@ -363,6 +370,7 @@ class KorlanParser:
     def get_precedence(self, token_type: TokenType) -> int:
         """Get operator precedence"""
         precedence_map = {
+            TokenType.ASSIGN: 0,  # Lowest precedence for assignment
             TokenType.OR: 1,
             TokenType.AND: 2,
             TokenType.EQUALS: 3,

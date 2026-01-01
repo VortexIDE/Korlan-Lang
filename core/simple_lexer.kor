@@ -1,0 +1,142 @@
+# Simple Korlan Lexer - Bootstrap Test Version
+# A simplified lexer that can tokenize basic Korlan syntax
+
+# Token types
+const IDENTIFIER = "IDENTIFIER"
+const NUMBER = "NUMBER"
+const STRING = "STRING"
+const FUN = "FUN"
+const LEFT_PAREN = "LEFT_PAREN"
+const RIGHT_PAREN = "RIGHT_PAREN"
+const LEFT_BRACE = "LEFT_BRACE"
+const RIGHT_BRACE = "RIGHT_BRACE"
+const ASSIGN = "ASSIGN"
+const PLUS = "PLUS"
+const EOF = "EOF"
+
+# Token structure
+struct Token {
+    type: String
+    value: String
+    line: Int
+    column: Int
+}
+
+# Simple lexer class
+class SimpleLexer {
+    source: String
+    position: Int
+    line: Int
+    column: Int
+    
+    init(source: String) {
+        self.source = source
+        self.position = 0
+        self.line = 1
+        self.column = 1
+    }
+    
+    fun currentChar() -> String? {
+        if self.position >= self.source.length {
+            return null
+        }
+        return self.source[self.position].toString()
+    }
+    
+    fun advance() -> String? {
+        let char = self.currentChar()
+        if char != null {
+            self.position = self.position + 1
+            if char == "\n" {
+                self.line = self.line + 1
+                self.column = 1
+            } else {
+                self.column = self.column + 1
+            }
+        }
+        return char
+    }
+    
+    fun skipWhitespace() {
+        while (let char = self.currentChar()) && char.isspace() {
+            self.advance()
+        }
+    }
+    
+    fun readNumber() -> String {
+        let start = self.position
+        while (let char = self.currentChar()) && char.isdigit() {
+            self.advance()
+        }
+        return self.source[start..<self.position]
+    }
+    
+    fun readIdentifier() -> String {
+        let start = self.position
+        while (let char = self.currentChar()) && (char.isalpha() || char == "_") {
+            self.advance()
+        }
+        return self.source[start..<self.position]
+    }
+    
+    fun tokenize() -> Array<Token> {
+        var tokens = []
+        
+        while self.position < self.source.length {
+            self.skipWhitespace()
+            
+            if self.position >= self.source.length {
+                break
+            }
+            
+            let char = self.currentChar()
+            
+            if char != null && char!.isdigit() {
+                let value = self.readNumber()
+                tokens.append(Token(type: NUMBER, value: value, line: self.line, column: self.column - value.length))
+            } else if char != null && (char!.isalpha() || char == "_") {
+                let value = self.readIdentifier()
+                let tokenType = if value == "fun" { FUN } else { IDENTIFIER }
+                tokens.append(Token(type: tokenType, value: value, line: self.line, column: self.column - value.length))
+            } else if char == "(" {
+                tokens.append(Token(type: LEFT_PAREN, value: "(", line: self.line, column: self.column))
+                self.advance()
+            } else if char == ")" {
+                tokens.append(Token(type: RIGHT_PAREN, value: ")", line: self.line, column: self.column))
+                self.advance()
+            } else if char == "{" {
+                tokens.append(Token(type: LEFT_BRACE, value: "{", line: self.line, column: self.column))
+                self.advance()
+            } else if char == "}" {
+                tokens.append(Token(type: RIGHT_BRACE, value: "}", line: self.line, column: self.column))
+                self.advance()
+            } else if char == "=" {
+                tokens.append(Token(type: ASSIGN, value: "=", line: self.line, column: self.column))
+                self.advance()
+            } else if char == "+" {
+                tokens.append(Token(type: PLUS, value: "+", line: self.line, column: self.column))
+                self.advance()
+            } else {
+                self.advance()
+            }
+        }
+        
+        tokens.append(Token(type: EOF, value: "", line: self.line, column: self.column))
+        return tokens
+    }
+    
+    fun printTokens() {
+        for i in 0..<tokens.length {
+            let token = tokens[i]
+            print(i.toString().padLeft(3) + ": " + token.type.padRight(15) + " '" + token.value + "'")
+        }
+    }
+}
+
+# Test function
+fun main() {
+    let code = "fun test() { x = 42 + 7 }"
+    let lexer = SimpleLexer(source: code)
+    let tokens = lexer.tokenize()
+    lexer.printTokens()
+}

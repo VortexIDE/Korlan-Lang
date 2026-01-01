@@ -1,27 +1,203 @@
-// Korlan Standard Library - I/O Operations
-// Core input/output functions for the Korlan language
+# Korlan Standard Library - I/O Operations
+# Core input/output functions with @extern annotations for C standard library
 
-// Print function - outputs values to console
-fun print(value) -> Null {
-    // This will be implemented as a built-in in the VM
-    // For now, we'll use the VM's built-in print
-    builtin_print(value)
+# Core output functions
+@extern
+fun printf(format: String, ...) -> Int {
+    # Formatted output to stdout
+    # Links to C printf()
 }
 
-// Print with newline
-fun println(value) -> Null {
+@extern
+fun puts(str: String) -> Int {
+    # Output string with newline to stdout
+    # Links to C puts()
+}
+
+@extern
+fun putchar(c: Int) -> Int {
+    # Output single character to stdout
+    # Links to C putchar()
+}
+
+# High-level print functions (built on printf)
+fun print(value: Any) {
+    # Universal print function
+    # Uses type-specific formatting
+    if typeof(value) == "String" {
+        printf("%s", value)
+    } else if typeof(value) == "Int" {
+        printf("%d", value)
+    } else if typeof(value) == "Float" {
+        printf("%f", value)
+    } else {
+        printf("%p", value)  # Print pointer for other types
+    }
+}
+
+fun println(value: Any) {
     print(value)
-    print("\n")
+    printf("\n")
 }
 
-// Read input from user (placeholder for future implementation)
-fun read() -> String {
-    // This will be implemented as a built-in in the VM
-    builtin_read()
+fun print_debug(value: Any) {
+    printf("[DEBUG] ")
+    println(value)
 }
 
-// Read line with prompt
-fun read_line(prompt) -> String {
+# Input functions
+@extern
+fun getchar() -> Int {
+    # Read single character from stdin
+    # Links to C getchar()
+}
+
+@extern
+fun gets(buffer: String) -> String {
+    # Read string from stdin (unsafe, deprecated)
+    # Links to C gets()
+}
+
+@extern
+fun fgets(buffer: String, size: Int, stream: File*) -> String {
+    # Read string from stream safely
+    # Links to C fgets()
+}
+
+@extern
+fun scanf(format: String, ...) -> Int {
+    # Formatted input from stdin
+    # Links to C scanf()
+}
+
+# High-level input functions
+fun read_line() -> String {
+    # Read a line from stdin
+    let buffer = malloc(256)  # Allocate buffer
+    if fgets(buffer, 256, stdin) != null {
+        return buffer.toString()
+    } else {
+        return ""
+    }
+}
+
+fun read_line_with_prompt(prompt: String) -> String {
     print(prompt)
-    read()
+    return read_line()
 }
+
+fun read_char() -> Char {
+    return getchar().toChar()
+}
+
+# File I/O operations
+@extern
+fun fopen(filename: String, mode: String) -> File* {
+    # Open file with specified mode
+    # Links to C fopen()
+}
+
+@extern
+fun fclose(stream: File*) -> Int {
+    # Close file stream
+    # Links to C fclose()
+}
+
+@extern
+fun fread(buffer: Void*, size: Int, count: Int, stream: File*) -> Int {
+    # Read from file
+    # Links to C fread()
+}
+
+@extern
+fun fwrite(buffer: Void*, size: Int, count: Int, stream: File*) -> Int {
+    # Write to file
+    # Links to C fwrite()
+}
+
+@extern
+fun fprintf(stream: File*, format: String, ...) -> Int {
+    # Formatted output to file
+    # Links to C fprintf()
+}
+
+@extern
+fun fscanf(stream: File*, format: String, ...) -> Int {
+    # Formatted input from file
+    # Links to C fscanf()
+}
+
+# High-level file operations
+fun file_read_all(filename: String) -> String {
+    let file = fopen(filename, "r")
+    if file == null {
+        return ""
+    }
+    
+    # Get file size
+    fseek(file, 0, SEEK_END)
+    let size = ftell(file)
+    fseek(file, 0, SEEK_SET)
+    
+    # Read entire file
+    let buffer = malloc(size + 1)
+    fread(buffer, 1, size, file)
+    fclose(file)
+    
+    return buffer.toString()
+}
+
+fun file_write_all(filename: String, content: String) -> Bool {
+    let file = fopen(filename, "w")
+    if file == null {
+        return false
+    }
+    
+    fwrite(content, 1, content.length, file)
+    fclose(file)
+    return true
+}
+
+# Console operations
+@extern
+fun system(command: String) -> Int {
+    # Execute system command
+    # Links to C system()
+}
+
+fun clear_screen() {
+    # Clear console screen
+    # Platform-specific clear command
+    # TODO: Detect platform and use appropriate command
+    system("cls")  # Windows
+    # system("clear")  # Unix/Linux/macOS
+}
+
+# Error handling
+@extern
+fun perror(message: String) {
+    # Print system error message
+    # Links to C perror()
+}
+
+fun print_error(message: String) {
+    perror(message)
+}
+
+# Standard streams (from stdio.h)
+@extern
+val stdin: File*
+@extern
+val stdout: File*
+@extern
+val stderr: File*
+
+# File seek constants
+const SEEK_SET = 0
+const SEEK_CUR = 1
+const SEEK_END = 2
+
+# Type aliases
+type File* = Void*
+type Char = Int
+type Any = Void*

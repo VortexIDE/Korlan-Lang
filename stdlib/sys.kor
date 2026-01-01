@@ -1,0 +1,157 @@
+# Korlan System Library - Core System Functions
+# Provides low-level system access with @extern annotations
+
+# Memory management functions
+@extern
+fun malloc(size: Int) -> Void* {
+    # Allocate memory block of specified size
+    # Links to C malloc()
+}
+
+@extern  
+fun free(ptr: Void*) {
+    # Deallocate memory block
+    # Links to C free()
+}
+
+@extern
+fun realloc(ptr: Void*, size: Int) -> Void* {
+    # Reallocate memory block to new size
+    # Links to C realloc()
+}
+
+@extern
+fun memcpy(dest: Void*, src: Void*, count: Int) -> Void* {
+    # Copy memory block
+    # Links to C memcpy()
+}
+
+@extern
+fun memset(ptr: Void*, value: Int, count: Int) -> Void* {
+    # Set memory block to value
+    # Links to C memset()
+}
+
+# Process functions
+@extern
+fun exit(code: Int) {
+    # Exit the program with return code
+    # Links to C exit()
+}
+
+@extern
+fun abort() {
+    # Abort the program abnormally
+    # Links to C abort()
+}
+
+# System information
+@extern
+fun getenv(name: String) -> String? {
+    # Get environment variable value
+    # Links to C getenv()
+}
+
+@extern
+fun system(command: String) -> Int {
+    # Execute system command
+    # Links to C system()
+}
+
+# Time functions
+@extern
+fun time() -> Int {
+    # Get current Unix timestamp
+    # Links to C time()
+}
+
+@extern
+fun clock() -> Int {
+    # Get processor clock ticks
+    # Links to C clock()
+}
+
+# Math functions (system-level)
+@extern
+fun abs(x: Int) -> Int {
+    # Absolute value
+    # Links to C labs()
+}
+
+@extern
+fun rand() -> Int {
+    # Random number generator
+    # Links to C rand()
+}
+
+@extern
+fun srand(seed: Int) {
+    # Seed random number generator
+    # Links to C srand()
+}
+
+# String utilities (system-level)
+@extern
+fun strlen(str: String) -> Int {
+    # Get string length
+    # Links to C strlen()
+}
+
+@extern
+fun strcpy(dest: String, src: String) -> String {
+    # Copy string
+    # Links to C strcpy()
+}
+
+@extern
+fun strcat(dest: String, src: String) -> String {
+    # Concatenate strings
+    # Links to C strcat()
+}
+
+@extern
+fun strcmp(str1: String, str2: String) -> Int {
+    # Compare strings
+    # Links to C strcmp()
+}
+
+# File system operations
+@extern
+fun fopen(filename: String, mode: String) -> File* {
+    # Open file
+    # Links to C fopen()
+}
+
+@extern
+fun fclose(stream: File*) -> Int {
+    # Close file
+    # Links to C fclose()
+}
+
+@extern
+fun fread(buffer: Void*, size: Int, count: Int, stream: File*) -> Int {
+    # Read from file
+    # Links to C fread()
+}
+
+@extern
+fun fwrite(buffer: Void*, size: Int, count: Int, stream: File*) -> Int {
+    # Write to file
+    # Links to C fwrite()
+}
+
+@extern
+fun fseek(stream: File*, offset: Int, origin: Int) -> Int {
+    # Seek in file
+    # Links to C fseek()
+}
+
+@extern
+fun ftell(stream: File*) -> Int {
+    # Get current file position
+    # Links to C ftell()
+}
+
+# Type aliases for system types
+type File* = Void*
+type Void* = Void*
