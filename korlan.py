@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'core'))
 from lexer import KorlanLexer, LexerError
 from parser import KorlanParser, ParserError
 from compiler import KorlanCompiler, CompilerError
+from semantic import SemanticAnalyzer, SemanticError
 from runtime.kvm import KorlanVM, KVMError
 
 class KorlanRunner:
@@ -66,6 +67,23 @@ class KorlanRunner:
                 print("AST generated:")
                 self.print_ast(ast, 0)
             
+            # Phase 2.5: Semantic Analysis
+            if self.debug:
+                print("\n--- Phase 2.5: Semantic Analysis ---")
+            
+            semantic_analyzer = SemanticAnalyzer()
+            semantic_success = semantic_analyzer.analyze(ast)
+            
+            if not semantic_success:
+                print("Semantic analysis failed:")
+                for error in semantic_analyzer.get_errors():
+                    print(f"  {error}")
+                return False
+            
+            if self.debug:
+                print("Semantic analysis passed")
+                semantic_analyzer.print_symbols()
+            
             # Phase 3: Compilation
             if self.debug:
                 print("\n--- Phase 3: Compilation ---")
@@ -98,6 +116,9 @@ class KorlanRunner:
             return False
         except ParserError as e:
             print(f"Parser Error: {e.message}")
+            return False
+        except SemanticError as e:
+            print(f"Semantic Error: {e.message}")
             return False
         except CompilerError as e:
             print(f"Compiler Error: {e.message}")

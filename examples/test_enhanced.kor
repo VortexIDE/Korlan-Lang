@@ -1,0 +1,22 @@
+// Test enhanced Korlan infrastructure
+// Demonstrates stack frames, arrow pipelines, and semantic analysis
+
+fun process(value: String) -> String {
+    "Processed: " + value
+}
+
+fun main() {
+    // Test mutable variables (semantic analysis)
+    mut counter = 0
+    counter = counter + 1
+    print("Counter: " + counter)
+    
+    // Test arrow pipeline (compiler enhancement)
+    "Hello" -> process() -> print()
+    
+    // Test type safety (semantic analysis should catch this)
+    // mut x = 5
+    // x = "hello"  // This should fail semantic analysis
+    
+    print("Enhanced Korlan working!")
+}

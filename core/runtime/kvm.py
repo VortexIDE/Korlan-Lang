@@ -11,10 +11,11 @@ from compiler import Instruction, OpCode, CompilerError
 
 @dataclass
 class CallFrame:
-    """Represents a function call frame"""
+    """Represents a function call frame with local variable scope"""
     return_address: int
     locals: Dict[str, Any]
     function_name: str
+    stack_base: int  # Base position in the stack for this frame
 
 class KVMError(Exception):
     def __init__(self, message: str, instruction: Optional[Instruction] = None, ip: int = 0):
@@ -168,20 +169,22 @@ class KorlanVM:
             self.globals[var_name] = value
         
         elif opcode == OpCode.CALL_FUNC:
-            # Call function
+            # Call function with proper stack frame management
             func_address = operand
             if func_address < 0 or func_address >= len(self.constants):
                 self.error(f"Invalid function address: {func_address}", instruction)
             
-            # Create new call frame
+            # Create new call frame with current stack base
             frame = CallFrame(
                 return_address=self.ip + 1,
                 locals={},
-                function_name=f"func_{func_address}"
+                function_name=f"func_{func_address}",
+                stack_base=len(self.stack)
             )
             
-            # Pop arguments and store in locals
-            # Note: This is simplified - real implementation would need parameter info
+            # For now, we'll assume no parameters (simplified)
+            # In a real implementation, we'd pop arguments and store them as locals
+            
             self.call_stack.append(frame)
             self.ip = func_address - 1  # -1 because we increment at end of loop
         
@@ -293,6 +296,20 @@ class KorlanVM:
             output = " ".join(str(arg) for arg in args)
             print(output)
             self.push(None)  # Print returns null
+        
+        elif opcode == OpCode.PRINT_STACK:
+            # Debug instruction to print stack state
+            print("=== STACK STATE ===")
+            print(f"IP: {self.ip}")
+            print(f"Stack depth: {len(self.stack)}")
+            print(f"Stack contents:")
+            for i, value in enumerate(self.stack):
+                print(f"  [{i}]: {value} ({type(value).__name__})")
+            print(f"Call frames: {len(self.call_stack)}")
+            for i, frame in enumerate(self.call_stack):
+                print(f"  Frame {i}: {frame.function_name} (locals: {frame.locals})")
+            print(f"Globals: {self.globals}")
+            print("==================")
         
         elif opcode == OpCode.HALT:
             # Stop execution

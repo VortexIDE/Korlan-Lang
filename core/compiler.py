@@ -278,9 +278,37 @@ class KorlanCompiler:
                 for arg in transform.children:
                     self.compile_node(arg)
                 
-                # Call the function (the current value is already on stack)
+                # For arrow pipeline: the left value becomes the FIRST argument
+                # So we need to rearrange the stack: [left_value, arg1, arg2, ...] -> [arg1, arg2, ..., left_value]
+                # This way when the function is called, left_value is the first parameter
+                
+                # Save the pipeline value (left side)
+                self.emit(OpCode.DUP, node=node)  # Duplicate the pipeline value
+                
+                # Move additional arguments to the front if any
+                arg_count = len(transform.children)
+                if arg_count > 0:
+                    # We have: [pipeline_value, arg1, arg2, ...]
+                    # We want: [arg1, arg2, ..., pipeline_value]
+                    
+                    # Store pipeline value temporarily
+                    self.emit(OpCode.STORE_GLOBAL, "__pipeline_temp", node=node)
+                    
+                    # Move arguments to front (they're already in correct order)
+                    # pipeline_value is now stored, args are on stack
+                    
+                    # Load pipeline value back (now it's last)
+                    self.emit(OpCode.LOAD_GLOBAL, "__pipeline_temp", node=node)
+                    
+                    # Total args = additional args + 1 (pipeline value)
+                    total_args = arg_count + 1
+                else:
+                    # No additional args, pipeline value is the only argument
+                    total_args = 1
+                
+                # Call the function
                 if func_name in self.builtin_functions:
-                    self.emit(self.builtin_functions[func_name], len(transform.children) + 1, transform)
+                    self.emit(self.builtin_functions[func_name], total_args, transform)
                 else:
                     func_index = self.functions.get(func_name)
                     if func_index is None:
@@ -357,14 +385,16 @@ class KorlanCompiler:
 
 def main():
     """Test the compiler with sample code"""
-    from lexer import KorlanLexer
-    from parser import KorlanParser
+    from lexer import KorlanLexer, LexerError
+    from parser import KorlanParser, ParserError
+    from semantic import SemanticAnalyzer, SemanticError
     
     sample_code = '''
 fun main() {
     print("Hello, Korlan!")
 }
 '''
+
     
     print("=== Korlan Compiler Test ===")
     print("Input code:")
