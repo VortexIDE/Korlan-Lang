@@ -19,6 +19,25 @@ class Type(Enum):
     VOID = "Void"
     FUNCTION = "Function"
     UNKNOWN = "Unknown"
+    
+    @classmethod
+    def from_string(cls, type_str: str) -> 'Type':
+        """Create Type from string, handling nullable types"""
+        if type_str.endswith('?'):
+            # For nullable types, we return the base type but track nullability separately
+            base_type = type_str[:-1]
+            return cls.from_string(base_type)
+        
+        type_map = {
+            'Int': cls.INT,
+            'Float': cls.FLOAT,
+            'String': cls.STRING,
+            'Bool': cls.BOOL,
+            'Null': cls.NULL,
+            'Void': cls.VOID,
+            'Function': cls.FUNCTION,
+        }
+        return type_map.get(base_type, cls.UNKNOWN)
 
 @dataclass
 class Symbol:
@@ -26,9 +45,11 @@ class Symbol:
     name: str
     type: Type
     is_mutable: bool
-    node: ASTNode
-    line: int
-    column: int
+    is_nullable: bool = False
+    is_initialized: bool = False
+    node: ASTNode = None
+    line: int = 0
+    column: int = 0
 
 class KorlanError(Exception):
     """Korlan-specific error with line and column information"""
@@ -157,15 +178,50 @@ class SemanticChecker:
             self.add_error(f"Variable '{var_name}' already declared in current scope", node, "Error")
             return
         
-        # Determine variable type from initializer if present
+        # Parse type annotation if present
         var_type = Type.UNKNOWN
+        is_nullable = False
+        
+        # Check for type annotation in children
+        for child in node.children:
+            if hasattr(child, 'type') and child.type == NodeType.IDENTIFIER:
+                # This could be a type annotation
+                if isinstance(child.value, str):
+                    if child.value.endswith('?'):
+                        is_nullable = True
+                        var_type = Type.from_string(child.value[:-1])
+                    else:
+                        var_type = Type.from_string(child.value)
+                break
+        
+        # Determine variable type from initializer if present
+        initializer = None
         if len(node.children) > 0:
-            initializer = node.children[-1]
-            var_type = self.infer_type(initializer)
-            self.check_node(initializer)
+            # Find the last child that's not a type annotation
+            for child in reversed(node.children):
+                if child.type != NodeType.IDENTIFIER or not hasattr(child, 'value') or not isinstance(child.value, str) or not child.value[0].isupper():
+                    initializer = child
+                    break
+            
+            if initializer:
+                var_type = self.infer_type(initializer)
+                self.check_node(initializer)
+                
+                # Check null safety of initializer
+                if not is_nullable and self.could_be_null(initializer):
+                    self.add_error(f"Cannot assign potentially null value to non-nullable variable '{var_name}'", node, "Null Safety Error")
         
         # Create symbol
-        symbol = Symbol(var_name, var_type, is_mutable, node, node.line, node.column)
+        symbol = Symbol(
+            name=var_name,
+            type=var_type, 
+            is_mutable=is_mutable, 
+            is_nullable=is_nullable,
+            is_initialized=(initializer is not None),
+            node=node, 
+            line=node.line, 
+            column=node.column
+        )
         self.symbols[var_name] = symbol
     
     def check_block(self, node: ASTNode):
@@ -190,15 +246,24 @@ class SemanticChecker:
         if node.value in ["+", "-", "*", "/"]:
             if not self.is_numeric_type(left_type) or not self.is_numeric_type(right_type):
                 self.add_error(f"Cannot perform arithmetic operation on {left_type.value} and {right_type.value}", node, "Type Error")
+            # Check null safety for arithmetic operations
+            self.check_null_safety_in_operation(left, f"{node.value} operation")
+            self.check_null_safety_in_operation(right, f"{node.value} operation")
         elif node.value in ["==", "!="]:
             # Any types can be compared for equality
             pass
         elif node.value in ["<", ">", "<=", ">="]:
             if not self.is_comparable_type(left_type) or not self.is_comparable_type(right_type):
                 self.add_error(f"Cannot compare {left_type.value} and {right_type.value}", node, "Type Error")
+            # Check null safety for comparison operations
+            self.check_null_safety_in_operation(left, f"{node.value} comparison")
+            self.check_null_safety_in_operation(right, f"{node.value} comparison")
         elif node.value in ["&&", "||"]:
             if left_type != Type.BOOL or right_type != Type.BOOL:
                 self.add_error(f"Logical operators require boolean operands, got {left_type.value} and {right_type.value}", node, "Type Error")
+        elif node.value == "??":
+            # Elvis operator - right side can be any type
+            pass
     
     def check_function_call(self, node: ASTNode):
         """Check function call"""
@@ -242,6 +307,17 @@ class SemanticChecker:
         # Check if variable exists
         if var_name not in self.symbols:
             self.add_error(f"Undefined variable: {var_name}", node, "Error")
+            return
+        
+        symbol = self.symbols[var_name]
+        
+        # Check if variable is initialized
+        if not symbol.is_initialized:
+            self.add_error(f"Use of uninitialized variable: {var_name}", node, "Error")
+        
+        # Check null safety for non-nullable variables
+        if not symbol.is_nullable and self.could_be_null(node):
+            self.add_error(f"Variable '{var_name}' is non-nullable but could be null", node, "Null Safety Error")
     
     def check_assignment(self, node: ASTNode):
         """Check assignment for mut violations"""
@@ -271,12 +347,19 @@ class SemanticChecker:
         # Check value
         self.check_node(value)
         
+        # Check null safety for assignment
+        if not symbol.is_nullable and self.could_be_null(value):
+            self.add_error(f"Cannot assign potentially null value to non-nullable variable '{var_name}'", node, "Null Safety Error")
+        
         # Type checking
         var_type = symbol.type
         value_type = self.get_node_type(value)
         
         if var_type != Type.UNKNOWN and value_type != Type.UNKNOWN and var_type != value_type:
             self.add_error(f"Cannot assign {value_type.value} to variable of type {var_type.value}", node, "Type Error")
+        
+        # Mark variable as initialized
+        symbol.is_initialized = True
     
     def infer_type(self, node: ASTNode) -> Type:
         """Infer the type of an AST node"""
@@ -328,6 +411,36 @@ class SemanticChecker:
     def is_comparable_type(self, type: Type) -> bool:
         """Check if type is comparable"""
         return type in [Type.INT, Type.FLOAT, Type.STRING]
+    
+    def could_be_null(self, node: ASTNode) -> bool:
+        """Check if an expression could evaluate to null"""
+        if node.type == NodeType.LITERAL and node.value == "null":
+            return True
+        elif node.type == NodeType.IDENTIFIER:
+            symbol = self.symbols.get(node.value)
+            return symbol and symbol.is_nullable
+        elif node.type == NodeType.BINARY:
+            # Elvis operator (??) handles null, so result is non-null
+            if node.value == "??":
+                return False
+            # Other binary operations could result in null if operands could be null
+            return any(self.could_be_null(child) for child in node.children)
+        elif node.type == NodeType.CALL:
+            # Function calls could return null (conservative approach)
+            return True
+        else:
+            # For other expressions, be conservative
+            return False
+    
+    def check_null_safety_in_operation(self, node: ASTNode, operation: str):
+        """Check null safety for operations that don't allow null"""
+        if node.type == NodeType.IDENTIFIER:
+            symbol = self.symbols.get(node.value)
+            if symbol and symbol.is_nullable:
+                self.add_error(f"Cannot use nullable variable '{node.value}' in {operation} without null check", node, "Null Safety Error")
+        elif node.type == NodeType.BINARY:
+            for child in node.children:
+                self.check_null_safety_in_operation(child, operation)
     
     def get_errors(self) -> List[KorlanError]:
         """Get all semantic errors"""

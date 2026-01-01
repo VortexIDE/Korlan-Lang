@@ -1,0 +1,105 @@
+# Simple Korlan Self-Hosted Lexer
+# Minimal implementation that can actually run on the current Python KVM
+
+# Simple token structure
+fun create_token(type: String, value: String) -> Map {
+    return {"type": type, "value": value}
+}
+
+# Simple lexer state
+mut source = ""
+mut position = 0
+
+# Initialize
+fun init(input: String) {
+    source = input
+    position = 0
+}
+
+# Get current character
+fun current() -> String? {
+    if position >= length(source) {
+        return null
+    }
+    return char_at(source, position)
+}
+
+# Advance position
+fun advance() {
+    position = position + 1
+}
+
+# Skip whitespace
+fun skip_space() {
+    while (current() != null && current()?.isspace() == true) {
+        advance()
+    }
+}
+
+# Read identifier
+fun read_id() -> String {
+    start = position
+    while (current() != null && (current()?.isalnum() == true || current() == "_")) {
+        advance()
+    }
+    return substring(source, start, position)
+}
+
+# Simple tokenization
+fun tokenize_simple(input: String) -> List {
+    init(input)
+    tokens = []
+    
+    while (position < length(source)) {
+        skip_space()
+        
+        char = current()
+        if char == null {
+            break
+        }
+        
+        if char?.isalpha() == true {
+            value = read_id()
+            token = create_token("IDENTIFIER", value)
+            tokens.append(token)
+        } else if char == "(" {
+            token = create_token("LEFT_PAREN", "(")
+            tokens.append(token)
+            advance()
+        } else if char == ")" {
+            token = create_token("RIGHT_PAREN", ")")
+            tokens.append(token)
+            advance()
+        } else if char == "{" {
+            token = create_token("LEFT_BRACE", "{")
+            tokens.append(token)
+            advance()
+        } else if char == "}" {
+            token = create_token("RIGHT_BRACE", "}")
+            tokens.append(token)
+            advance()
+        } else {
+            advance()
+        }
+    }
+    
+    return tokens
+}
+
+# Test function
+fun test() {
+    code = "fun main() { print(\"hello\") }"
+    tokens = tokenize_simple(code)
+    
+    i = 0
+    while (i < length(tokens)) {
+        token = tokens[i]
+        print(token["type"] + ": " + token["value"])
+        i = i + 1
+    }
+}
+
+# Main
+fun main() {
+    test()
+}

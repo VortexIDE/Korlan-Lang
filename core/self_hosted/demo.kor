@@ -1,0 +1,13 @@
+# Ultra-simple Korlan demonstration
+# Just basic operations that the current compiler can handle
+
+mut x = 10
+mut y = 20
+
+fun add(a: Int, b: Int) -> Int {
+    return a + b
+}
+
+result = add(x, y)
+print("Result: ")
+print(result)

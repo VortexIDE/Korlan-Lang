@@ -25,11 +25,18 @@ class OpCode(Enum):
     # Variable operations
     LOAD_VAR = "LOAD_VAR"
     STORE_VAR = "STORE_VAR"
+    LOAD_LOCAL = "LOAD_LOCAL"
+    STORE_LOCAL = "STORE_LOCAL"
     LOAD_GLOBAL = "LOAD_GLOBAL"
     STORE_GLOBAL = "STORE_GLOBAL"
     
+    # Object operations
+    GET_ATTR = "GET_ATTR"
+    SET_ATTR = "SET_ATTR"
+    
     # Function operations
     CALL_FUNC = "CALL_FUNC"
+    CALL_NATIVE = "CALL_NATIVE"
     RETURN = "RETURN"
     CLOSURE = "CLOSURE"
     
@@ -60,6 +67,7 @@ class OpCode(Enum):
     
     # Other operations
     PRINT = "PRINT"
+    PRINT_STACK = "PRINT_STACK"
     HALT = "HALT"
 
 @dataclass
@@ -85,6 +93,10 @@ class KorlanCompiler:
         self.current_function = None
         self.scope_depth = 0
         self.loop_stack = []
+        
+        # Initialize native methods for pipeline compilation
+        from native_methods import NativeMethods
+        self.native_methods = NativeMethods()
         
         # Built-in functions
         self.builtin_functions = {
@@ -289,35 +301,53 @@ class KorlanCompiler:
                 # We have additional arguments, need to rearrange stack
                 arg_count = len(transform.children)
                 
+                # Store all arguments including pipeline value
+                # Current stack: [pipeline_value, arg1, arg2, ..., argN]
+                
                 # Store pipeline value temporarily
                 self.emit(OpCode.STORE_GLOBAL, "__pipeline_temp", node=node)
                 
-                # Now stack has: [arg1, arg2, ...]
-                # Load pipeline value back (now it will be last)
+                # Now stack has: [arg1, arg2, ..., argN]
+                # Load pipeline value back first
                 self.emit(OpCode.LOAD_GLOBAL, "__pipeline_temp", node=node)
                 
-                # Stack now: [arg1, arg2, ..., pipeline_value]
-                # Total args = additional args + 1 (pipeline value as first)
+                # Now stack has: [arg1, arg2, ..., argN, pipeline_value]
+                # We need pipeline_value to be FIRST, so we need to reverse order
+                
+                # Store all current values temporarily
+                for j in range(arg_count + 1):
+                    self.emit(OpCode.STORE_GLOBAL, f"__pipeline_arg_{j}", node=node)
+                
+                # Load pipeline value first
+                self.emit(OpCode.LOAD_GLOBAL, "__pipeline_temp", node=node)
+                
+                # Load additional arguments in original order
+                for j in range(arg_count):
+                    self.emit(OpCode.LOAD_GLOBAL, f"__pipeline_arg_{j}", node=node)
+                
+                # Clean up temporaries
+                for j in range(arg_count + 1):
+                    self.emit(OpCode.PUSH_NULL, node=node)  # Placeholder for cleanup
+                    self.emit(OpCode.STORE_GLOBAL, f"__pipeline_arg_{j}", node=node)
+                self.emit(OpCode.PUSH_NULL, node=node)  # Placeholder for cleanup
+                self.emit(OpCode.STORE_GLOBAL, "__pipeline_temp", node=node)
+                
                 total_args = arg_count + 1
-                
-                # We need to reverse the order so pipeline_value is first
-                # This is a simplified approach - in a real implementation we'd use
-                # more sophisticated stack manipulation
-                for _ in range(total_args):
-                    self.emit(OpCode.DUP, node=node)
-                
-                # For now, we'll call with the current order and let the function
-                # handle the pipeline value as the last argument
-                # TODO: Implement proper stack reversal for first-argument positioning
                 
             else:
                 # No additional arguments, pipeline value is the only argument
                 total_args = 1
             
             # Call the function
-            if func_name in self.builtin_functions:
+            if func_name in self.native_methods.list_functions():
+                # Use native function call
+                func_index = self.add_constant(func_name)
+                self.emit(OpCode.PUSH_INT, total_args, node)  # Push arg count
+                self.emit(OpCode.CALL_NATIVE, func_index, transform)
+            elif func_name in self.builtin_functions:
                 self.emit(self.builtin_functions[func_name], total_args, transform)
             else:
+                # Call user-defined function
                 func_index = self.functions.get(func_name)
                 if func_index is None:
                     self.error(f"Undefined function in pipeline: {func_name}", transform)

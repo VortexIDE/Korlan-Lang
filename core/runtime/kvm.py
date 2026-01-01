@@ -6,8 +6,13 @@ Executes Korlan bytecode with a stack-based architecture.
 from typing import List, Any, Dict, Callable, Optional
 from dataclasses import dataclass
 import sys
+import os
+
+# Add the runtime directory to the path for imports
+sys.path.insert(0, os.path.dirname(__file__))
 
 from compiler import Instruction, OpCode, CompilerError
+from native_methods import NativeMethods, NativeError
 
 @dataclass
 class CallFrame:
@@ -37,7 +42,10 @@ class KorlanVM:
         self.debug = debug
         self.current_frame: Optional[CallFrame] = None
         
-        # Built-in functions
+        # Initialize native methods bridge
+        self.native_methods = NativeMethods()
+        
+        # Built-in functions (legacy support)
         self.builtins: Dict[str, Callable] = {
             "print": self.builtin_print,
             "builtin_print": self.builtin_print,
@@ -132,6 +140,7 @@ class KorlanVM:
     def execute(self, bytecode: List[Instruction], constants: List[Any]) -> Any:
         """Execute bytecode and return the result"""
         self.constants = constants
+        self.bytecode = bytecode  # Store bytecode for HALT instruction
         self.ip = 0
         self.stack.clear()
         self.call_stack.clear()
@@ -214,6 +223,49 @@ class KorlanVM:
             value = self.pop()
             self.globals[var_name] = value
         
+        elif opcode == OpCode.LOAD_LOCAL:
+            # Load local variable from current frame
+            var_name = self.get_variable_name(operand)
+            if self.current_frame and var_name in self.current_frame.locals:
+                self.push(self.current_frame.locals[var_name])
+            else:
+                self.error(f"Undefined local variable: {var_name}", instruction)
+        
+        elif opcode == OpCode.STORE_LOCAL:
+            # Store local variable in current frame
+            var_name = self.get_variable_name(operand)
+            value = self.pop()
+            if self.current_frame:
+                self.current_frame.locals[var_name] = value
+            else:
+                self.error(f"Cannot store local variable '{var_name}' - no active frame", instruction)
+        
+        elif opcode == OpCode.GET_ATTR:
+            # Get attribute from object
+            attr_name = self.get_variable_name(operand)
+            obj = self.pop()
+            
+            if obj is None:
+                self.error(f"Cannot access attribute '{attr_name}' of null", instruction)
+            
+            # Handle dictionary-like objects
+            if isinstance(obj, dict):
+                if attr_name in obj:
+                    self.push(obj[attr_name])
+                else:
+                    self.error(f"Object has no attribute '{attr_name}'", instruction)
+            # Handle string methods
+            elif isinstance(obj, str) and hasattr(obj, attr_name):
+                attr_value = getattr(obj, attr_name)
+                if callable(attr_value):
+                    # For methods, we'd need to create a bound method
+                    # For now, just push the method reference
+                    self.push(attr_value)
+                else:
+                    self.push(attr_value)
+            else:
+                self.error(f"Cannot access attribute '{attr_name}' on {type(obj).__name__}", instruction)
+        
         elif opcode == OpCode.CALL_FUNC:
             # Call function with proper frame management
             func_address = operand
@@ -228,6 +280,27 @@ class KorlanVM:
             
             self.push_frame(frame)
             self.ip = func_address - 1  # -1 because we increment at end of loop
+        
+        elif opcode == OpCode.CALL_NATIVE:
+            # Call native function through FFI bridge
+            func_name = operand
+            if func_name < 0 or func_name >= len(self.constants):
+                self.error(f"Invalid native function index: {func_name}", instruction)
+            
+            native_func_name = self.constants[func_name]
+            arg_count = self.pop() if self.stack else 0
+            
+            # Collect arguments from stack (in reverse order)
+            args = []
+            for _ in range(arg_count):
+                args.append(self.pop())
+            args.reverse()  # Put them back in correct order
+            
+            try:
+                result = self.native_methods.call_function(native_func_name, args)
+                self.push(result)
+            except NativeError as e:
+                self.error(f"[Korlan Error] Native function '{native_func_name}' failed: {e.message}", instruction)
         
         elif opcode == OpCode.RETURN:
             # Return from function with proper frame cleanup
@@ -361,7 +434,7 @@ class KorlanVM:
         
         elif opcode == OpCode.HALT:
             # Stop execution
-            self.ip = len(self.constants)  # Set IP beyond bytecode to stop
+            self.ip = len(self.bytecode) + 1  # Set IP beyond bytecode to stop
         
         else:
             self.error(f"Unknown opcode: {opcode.name}", instruction)

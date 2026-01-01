@@ -192,6 +192,10 @@ class KorlanLexer:
         if self.current_char() == '/' and self.peek_char() == '/':
             while (char := self.advance()) is not None and char != '\n':
                 pass
+        elif self.current_char() == '#':
+            # Skip hash comments (for self-hosted lexer compatibility)
+            while (char := self.advance()) is not None and char != '\n':
+                pass
     
     def check_for_semicolon(self):
         """Enforce zero-ceremony: throw error if semicolon found"""
@@ -262,6 +266,9 @@ class KorlanLexer:
                 
                 # Skip comments
                 if current_char == '/' and self.peek_char() == '/':
+                    self.skip_comment()
+                    continue
+                elif current_char == '#':
                     self.skip_comment()
                     continue
                 

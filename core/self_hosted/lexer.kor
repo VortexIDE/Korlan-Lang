@@ -1,0 +1,423 @@
+# Korlan Self-Hosted Lexer
+# A minimal lexer implementation in Korlan syntax
+# This file will be compiled by the Python KVM and then can run on itself
+
+# Token type definitions
+fun TokenType() -> String {
+    # These would be enums in a real implementation
+    # For now, we'll use string representations
+    return "TOKEN_TYPE"
+}
+
+# Token structure
+fun Token(type: String, value: String, line: Int, column: Int) -> Map {
+    return {
+        "type": type,
+        "value": value,
+        "line": line,
+        "column": column
+    }
+}
+
+# Lexer state
+mut position = 0
+mut line = 1
+mut column = 1
+mut source = ""
+
+# Initialize lexer
+fun init_lexer(input_source: String) {
+    source = input_source
+    position = 0
+    line = 1
+    column = 1
+}
+
+# Get current character
+fun current_char() -> String? {
+    if position >= length(source) {
+        return null
+    }
+    return char_at(source, position)
+}
+
+# Peek at next character
+fun peek_char(offset: Int) -> String? {
+    peek_pos = position + offset
+    if peek_pos >= length(source) {
+        return null
+    }
+    return char_at(source, peek_pos)
+}
+
+# Advance position
+fun advance() {
+    char = current_char()
+    if char != null {
+        position = position + 1
+        if char == "\n" {
+            line = line + 1
+            column = 1
+        } else {
+            column = column + 1
+        }
+    }
+}
+
+# Skip whitespace
+fun skip_whitespace() {
+    while (current_char() != null && current_char()?.isspace() == true) {
+        if current_char() == "\n" {
+            # Would emit newline token in real implementation
+            pass
+        }
+        advance()
+    }
+}
+
+# Skip comments
+fun skip_comment() {
+    if current_char() == "/" && peek_char(1) == "/" {
+        while (current_char() != null && current_char() != "\n") {
+            advance()
+        }
+    }
+}
+
+# Check for ceremony violations (no semicolons!)
+fun check_ceremony() {
+    if current_char() == ";" {
+        print("[Korlan Error] Line " + line + ", Col " + column + ": Ceremony Error: Semicolons are not allowed in Korlan!")
+        # Would throw exception in real implementation
+    }
+}
+
+# Read string literal
+fun read_string(quote: String) -> String {
+    start_line = line
+    start_column = column
+    advance()  # Skip opening quote
+    
+    value = ""
+    while (current_char() != null && current_char() != quote) {
+        if current_char() == "\\" {
+            advance()
+            escaped = current_char()
+            if escaped == null {
+                print("[Korlan Error] Unterminated string literal")
+                return ""
+            }
+            
+            # Handle escape sequences
+            if escaped == "n" {
+                value = value + "\n"
+            } else if escaped == "t" {
+                value = value + "\t"
+            } else if escaped == "\\" {
+                value = value + "\\"
+            } else if escaped == "\"" {
+                value = value + "\""
+            } else if escaped == "'" {
+                value = value + "'"
+            } else {
+                value = value + escaped
+            }
+            advance()
+        } else {
+            value = value + current_char()
+            advance()
+        }
+    }
+    
+    if current_char() != quote {
+        print("[Korlan Error] Unterminated string literal (missing closing " + quote + ")")
+        return ""
+    }
+    
+    advance()  # Skip closing quote
+    return value
+}
+
+# Read number
+fun read_number() -> String {
+    start_pos = position
+    while (current_char() != null && (current_char()?.isdigit() == true || current_char() == ".")) {
+        advance()
+    }
+    return substring(source, start_pos, position)
+}
+
+# Read identifier
+fun read_identifier() -> String {
+    start_pos = position
+    while (current_char() != null && (current_char()?.isalnum() == true || current_char() == "_")) {
+        advance()
+    }
+    return substring(source, start_pos, position)
+}
+
+# Check if identifier is keyword
+fun is_keyword(ident: String) -> String? {
+    keywords = {
+        "fun": "FUN",
+        "mut": "MUT", 
+        "class": "CLASS",
+        "if": "IF",
+        "match": "MATCH",
+        "spawn": "SPAWN",
+        "init": "INIT",
+        "else": "ELSE",
+        "while": "WHILE",
+        "for": "FOR",
+        "return": "RETURN",
+        "break": "BREAK",
+        "continue": "CONTINUE",
+        "null": "NULL",
+        "true": "BOOLEAN",
+        "false": "BOOLEAN"
+    }
+    
+    if ident in keywords {
+        return keywords[ident]
+    }
+    return null
+}
+
+# Token specifications (simplified)
+fun scan_token() -> Token {
+    # Skip whitespace and comments first
+    skip_whitespace()
+    
+    if position >= length(source) {
+        return Token("EOF", "", line, column)
+    }
+    
+    # Check for ceremony violations
+    check_ceremony()
+    
+    # Skip comments
+    if current_char() == "/" && peek_char(1) == "/" {
+        skip_comment()
+        return scan_token()  # Recursive call to get next token
+    }
+    
+    char = current_char()
+    
+    # Multi-character operators
+    if char == "-" && peek_char(1) == ">" {
+        advance()
+        advance()
+        return Token("FUNCTION_ARROW", "->", line, column - 2)
+    }
+    
+    if char == "=" && peek_char(1) == ">" {
+        advance()
+        advance()
+        return Token("SINGLE_EXPR_ARROW", "=>", line, column - 2)
+    }
+    
+    if char == "=" && peek_char(1) == "=" {
+        advance()
+        advance()
+        return Token("EQUALS", "==", line, column - 2)
+    }
+    
+    if char == "!" && peek_char(1) == "=" {
+        advance()
+        advance()
+        return Token("NOT_EQUALS", "!=", line, column - 2)
+    }
+    
+    if char == "<" && peek_char(1) == "=" {
+        advance()
+        advance()
+        return Token("LESS_EQUALS", "<=", line, column - 2)
+    }
+    
+    if char == ">" && peek_char(1) == "=" {
+        advance()
+        advance()
+        return Token("GREATER_EQUALS", ">=", line, column - 2)
+    }
+    
+    if char == "&" && peek_char(1) == "&" {
+        advance()
+        advance()
+        return Token("AND", "&&", line, column - 2)
+    }
+    
+    if char == "|" && peek_char(1) == "|" {
+        advance()
+        advance()
+        return Token("OR", "||", line, column - 2)
+    }
+    
+    # Single-character tokens
+    if char == "(" {
+        advance()
+        return Token("LEFT_PAREN", "(", line, column - 1)
+    }
+    
+    if char == ")" {
+        advance()
+        return Token("RIGHT_PAREN", ")", line, column - 1)
+    }
+    
+    if char == "{" {
+        advance()
+        return Token("LEFT_BRACE", "{", line, column - 1)
+    }
+    
+    if char == "}" {
+        advance()
+        return Token("RIGHT_BRACE", "}", line, column - 1)
+    }
+    
+    if char == "[" {
+        advance()
+        return Token("LEFT_BRACKET", "[", line, column - 1)
+    }
+    
+    if char == "]" {
+        advance()
+        return Token("RIGHT_BRACKET", "]", line, column - 1)
+    }
+    
+    if char == "," {
+        advance()
+        return Token("COMMA", ",", line, column - 1)
+    }
+    
+    if char == "." {
+        advance()
+        return Token("DOT", ".", line, column - 1)
+    }
+    
+    if char == ":" {
+        advance()
+        return Token("COLON", ":", line, column - 1)
+    }
+    
+    if char == "?" {
+        advance()
+        return Token("NULL_SAFETY", "?", line, column - 1)
+    }
+    
+    if char == "=" {
+        advance()
+        return Token("ASSIGN", "=", line, column - 1)
+    }
+    
+    if char == "<" {
+        advance()
+        return Token("LESS_THAN", "<", line, column - 1)
+    }
+    
+    if char == ">" {
+        advance()
+        return Token("GREATER_THAN", ">", line, column - 1)
+    }
+    
+    if char == "+" {
+        advance()
+        return Token("PLUS", "+", line, column - 1)
+    }
+    
+    if char == "-" {
+        advance()
+        return Token("MINUS", "-", line, column - 1)
+    }
+    
+    if char == "*" {
+        advance()
+        return Token("MULTIPLY", "*", line, column - 1)
+    }
+    
+    if char == "/" {
+        advance()
+        return Token("DIVIDE", "/", line, column - 1)
+    }
+    
+    if char == "%" {
+        advance()
+        return Token("MODULO", "%", line, column - 1)
+    }
+    
+    if char == "!" {
+        advance()
+        return Token("NOT", "!", line, column - 1)
+    }
+    
+    # Literals
+    if char == "\"" || char == "'" {
+        value = read_string(char)
+        return Token("STRING", value, line, column - length(value))
+    }
+    
+    if char?.isdigit() == true {
+        value = read_number()
+        return Token("NUMBER", value, line, column - length(value))
+    }
+    
+    # Identifiers and keywords
+    if char?.isalpha() == true || char == "_" {
+        value = read_identifier()
+        keyword_type = is_keyword(value)
+        if keyword_type != null {
+            return Token(keyword_type, value, line, column - length(value))
+        }
+        return Token("IDENTIFIER", value, line, column - length(value))
+    }
+    
+    # Unknown character
+    print("[Korlan Error] Line " + line + ", Col " + column + ": Unexpected character: '" + char + "'")
+    advance()
+    return Token("ILLEGAL", char ?? "", line, column - 1)
+}
+
+# Main tokenization function
+fun tokenize(input_source: String) -> List {
+    init_lexer(input_source)
+    tokens = []
+    
+    while (position < length(source)) {
+        token = scan_token()
+        tokens.append(token)
+        
+        # Break on EOF
+        if token["type"] == "EOF" {
+            break
+        }
+    }
+    
+    return tokens
+}
+
+# Test function
+fun test_lexer() {
+    test_code = '''
+fun main() {
+    mut message = "Hello, Korlan!"
+    print(message)
+}
+'''
+    
+    print("=== Self-Hosted Lexer Test ===")
+    print("Input code:")
+    print(test_code)
+    print("\nTokens:")
+    
+    tokens = tokenize(test_code)
+    
+    i = 0
+    while (i < length(tokens)) {
+        token = tokens[i]
+        print(i + ": " + token["type"] + " '" + token["value"] + "' (line " + token["line"] + ", col " + token["column"] + ")")
+        i = i + 1
+    }
+}
+
+# Entry point
+fun main() {
+    test_lexer()
+}
