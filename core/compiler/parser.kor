@@ -1,0 +1,582 @@
+// Korlan Parser - Written in Korlan itself
+// The Brain of the Language: Converts tokens into Abstract Syntax Tree
+
+// Import lexer
+import "./lexer.kor"
+
+// AST Node types
+class NodeType {
+    // Statements
+    static PROGRAM = "PROGRAM"
+    static FUNCTION = "FUNCTION"
+    static VARIABLE = "VARIABLE"
+    static IF = "IF"
+    static MATCH = "MATCH"
+    static WHILE = "WHILE"
+    static FOR = "FOR"
+    static RETURN = "RETURN"
+    static BREAK = "BREAK"
+    static CONTINUE = "CONTINUE"
+    static SPAWN = "SPAWN"
+    static CLASS = "CLASS"
+    static EXPRESSION_STMT = "EXPRESSION_STMT"
+    
+    // Expressions
+    static BINARY = "BINARY"
+    static UNARY = "UNARY"
+    static CALL = "CALL"
+    static PIPELINE = "PIPELINE"
+    static LITERAL = "LITERAL"
+    static IDENTIFIER = "IDENTIFIER"
+    static ASSIGN = "ASSIGN"
+    static IF_EXPR = "IF_EXPR"
+    static MATCH_EXPR = "MATCH_EXPR"
+    static BLOCK = "BLOCK"
+    static ARRAY = "ARRAY"
+    static MAP = "MAP"
+    static PROPERTY_ACCESS = "PROPERTY_ACCESS"
+    static METHOD_ACCESS = "METHOD_ACCESS"
+    static INDEX_ACCESS = "INDEX_ACCESS"
+    static NULL_SAFE_ACCESS = "NULL_SAFE_ACCESS"
+    static ELVIS = "ELVIS"
+    static TYPE_CAST = "TYPE_CAST"
+    static LAMBDA = "LAMBDA"
+}
+
+// AST Node class
+class ASTNode {
+    let type: String
+    let value: String
+    let children: List[ASTNode]
+    let line: Int
+    let column: Int
+    
+    fun init(type: String, value: String, children: List[ASTNode], line: Int, column: Int) -> ASTNode {
+        ASTNode {
+            type: type,
+            value: value,
+            children: children,
+            line: line,
+            column: column
+        }
+    }
+    
+    // Convenience constructor for nodes with no children
+    fun init(type: String, value: String, line: Int, column: Int) -> ASTNode {
+        ASTNode.init(type, value, [], line, column)
+    }
+    
+    // Convenience constructor for nodes with one child
+    fun init(type: String, value: String, child: ASTNode, line: Int, column: Int) -> ASTNode {
+        ASTNode.init(type, value, [child], line, column)
+    }
+    
+    // Add child to node
+    fun add_child(child: ASTNode) -> ASTNode {
+        ASTNode {
+            type: type,
+            value: value,
+            children: children + [child],
+            line: line,
+            column: column
+        }
+    }
+}
+
+// Parser class
+class Parser {
+    let tokens: List[Token]
+    let position: Int
+    let current_token: Token
+    
+    fun init(tokens: List[Token]) -> Parser {
+        Parser {
+            tokens: tokens,
+            position: 0,
+            current_token: tokens[0] if length(tokens) > 0 else null
+        }
+    }
+    
+    // Get current token
+    fun get_current() -> Token {
+        if position < length(tokens) {
+            tokens[position]
+        } else {
+            Token.init(TokenType.EOF, "", 0, 0)
+        }
+    }
+    
+    // Peek ahead
+    fun peek(offset: Int) -> Token {
+        let peek_pos = position + offset
+        if peek_pos < length(tokens) {
+            tokens[peek_pos]
+        } else {
+            Token.init(TokenType.EOF, "", 0, 0)
+        }
+    }
+    
+    // Advance to next token
+    fun advance() -> Parser {
+        if position < length(tokens) {
+            position = position + 1
+        }
+        Parser {
+            tokens: tokens,
+            position: position,
+            current_token: get_current()
+        }
+    }
+    
+    // Expect specific token type
+    fun expect(token_type: String) -> Parser {
+        if current_token.type == token_type {
+            advance()
+        } else {
+            print("Expected " + token_type + ", got " + current_token.type)
+            // In a real implementation, this would throw an error
+        }
+        Parser {
+            tokens: tokens,
+            position: position,
+            current_token: current_token
+        }
+    }
+    
+    // Check if current token matches any of the given types
+    fun match(token_types: List[String]) -> Bool {
+        let i = 0
+        while i < length(token_types) {
+            if current_token.type == token_types[i] {
+                advance()
+                return true
+            }
+            i = i + 1
+        }
+        false
+    }
+    
+    // Main parsing method
+    fun parse() -> ASTNode {
+        let statements = []
+        
+        while current_token.type != TokenType.EOF {
+            if current_token.type == TokenType.NEWLINE {
+                advance()
+                continue
+            }
+            
+            let stmt = parse_statement()
+            if stmt != null {
+                statements = statements + [stmt]
+            }
+        }
+        
+        ASTNode.init(NodeType.PROGRAM, "", statements, 0, 0)
+    }
+    
+    // Parse statement
+    fun parse_statement() -> ASTNode {
+        if match([TokenType.FUN]) {
+            parse_function()
+        } else if match([TokenType.CLASS]) {
+            parse_class()
+        } else if match([TokenType.MUT]) {
+            parse_variable(true)
+        } else if current_token.type == TokenType.IDENTIFIER and peek(1).type in [TokenType.ASSIGN, TokenType.COLON] {
+            parse_variable(false)
+        } else if match([TokenType.IF]) {
+            parse_if_statement()
+        } else if match([TokenType.MATCH]) {
+            parse_match_statement()
+        } else if match([TokenType.WHILE]) {
+            parse_while_statement()
+        } else if match([TokenType.FOR]) {
+            parse_for_statement()
+        } else if match([TokenType.RETURN]) {
+            parse_return_statement()
+        } else if match([TokenType.BREAK]) {
+            ASTNode.init(NodeType.BREAK, "", current_token.line, current_token.column)
+        } else if match([TokenType.CONTINUE]) {
+            ASTNode.init(NodeType.CONTINUE, "", current_token.line, current_token.column)
+        } else if match([TokenType.SPAWN]) {
+            parse_spawn_statement()
+        } else {
+            parse_expression_statement()
+        }
+    }
+    
+    // Parse function declaration
+    fun parse_function() -> ASTNode {
+        let name_token = current_token
+        expect(TokenType.IDENTIFIER)
+        
+        expect(TokenType.LEFT_PAREN)
+        let params = parse_parameters()
+        expect(TokenType.RIGHT_PAREN)
+        
+        // Parse return type (optional)
+        let return_type = null
+        if match([TokenType.FUNCTION_ARROW]) {
+            return_type = parse_type()
+        }
+        
+        // Parse function body
+        let body = null
+        if match([TokenType.SINGLE_EXPR_ARROW]) {
+            // Single expression function
+            body = parse_expression()
+        } else {
+            // Block function
+            expect(TokenType.LEFT_BRACE)
+            body = parse_block()
+            expect(TokenType.RIGHT_BRACE)
+        }
+        
+        let func_node = ASTNode.init(NodeType.FUNCTION, name_token.value, name_token.line, name_token.column)
+        
+        // Add parameters
+        let i = 0
+        while i < length(params) {
+            func_node = func_node.add_child(params[i])
+            i = i + 1
+        }
+        
+        // Add return type if present
+        if return_type != null {
+            func_node = func_node.add_child(return_type)
+        }
+        
+        // Add body
+        func_node = func_node.add_child(body)
+        
+        func_node
+    }
+    
+    // Parse function parameters
+    fun parse_parameters() -> List[ASTNode] {
+        let params = []
+        
+        while current_token.type != TokenType.RIGHT_PAREN and current_token.type != TokenType.EOF {
+            let param_name = current_token
+            expect(TokenType.IDENTIFIER)
+            
+            // Parse type annotation (optional)
+            let param_type = null
+            if match([TokenType.COLON]) {
+                param_type = parse_type()
+            }
+            
+            let param_node = ASTNode.init(NodeType.IDENTIFIER, param_name.value, param_name.line, param_name.column)
+            if param_type != null {
+                param_node = param_node.add_child(param_type)
+            }
+            
+            params = params + [param_node]
+            
+            if not match([TokenType.COMMA]) {
+                break
+            }
+        }
+        
+        params
+    }
+    
+    // Parse type annotation
+    fun parse_type() -> ASTNode {
+        let type_token = current_token
+        expect(TokenType.IDENTIFIER)
+        
+        let type_node = ASTNode.init(NodeType.IDENTIFIER, type_token.value, type_token.line, type_token.column)
+        
+        // Handle nullable types
+        if match([TokenType.NULL_SAFETY]) {
+            type_node.value = type_node.value + "?"
+        }
+        
+        type_node
+    }
+    
+    // Parse variable declaration
+    fun parse_variable(mutable: Bool) -> ASTNode {
+        let name_token = current_token
+        if not mutable {
+            expect(TokenType.IDENTIFIER)
+        }
+        
+        // Parse type annotation (optional)
+        let var_type = null
+        if match([TokenType.COLON]) {
+            var_type = parse_type()
+        }
+        
+        // Parse initializer
+        let initializer = null
+        if match([TokenType.ASSIGN]) {
+            initializer = parse_expression()
+        }
+        
+        let var_name = name_token.value
+        if mutable {
+            var_name = "mut " + var_name
+        }
+        
+        let var_node = ASTNode.init(NodeType.VARIABLE, var_name, name_token.line, name_token.column)
+        
+        if var_type != null {
+            var_node = var_node.add_child(var_type)
+        }
+        
+        if initializer != null {
+            var_node = var_node.add_child(initializer)
+        }
+        
+        var_node
+    }
+    
+    // Parse block of statements
+    fun parse_block() -> ASTNode {
+        let statements = []
+        
+        while current_token.type != TokenType.RIGHT_BRACE and current_token.type != TokenType.EOF {
+            if current_token.type == TokenType.NEWLINE {
+                advance()
+                continue
+            }
+            
+            let stmt = parse_statement()
+            if stmt != null {
+                statements = statements + [stmt]
+            }
+        }
+        
+        ASTNode.init(NodeType.BLOCK, "", statements, 0, 0)
+    }
+    
+    // Parse expression with operator precedence
+    fun parse_expression(precedence: Int) -> ASTNode {
+        let left = parse_primary()
+        
+        while (current_token.type not in [TokenType.NEWLINE, TokenType.EOF, TokenType.RIGHT_BRACE, TokenType.RIGHT_PAREN] and
+               get_precedence(current_token.type) >= precedence) {
+            let operator = current_token
+            advance()
+            
+            if operator.type == TokenType.FUNCTION_ARROW {
+                left = parse_pipeline(left)
+            } else {
+                let right = parse_expression(get_precedence(operator.type) + 1)
+                left = ASTNode.init(NodeType.BINARY, operator.value, [left, right], operator.line, operator.column)
+            }
+        }
+        
+        left
+    }
+    
+    // Parse primary expression
+    fun parse_primary() -> ASTNode {
+        if match([TokenType.NUMBER]) {
+            ASTNode.init(NodeType.LITERAL, "number", [ASTNode.init(NodeType.LITERAL, tokens[position-1].value, 0, 0)], 0, 0)
+        } else if match([TokenType.STRING]) {
+            ASTNode.init(NodeType.LITERAL, "string", [ASTNode.init(NodeType.LITERAL, tokens[position-1].value, 0, 0)], 0, 0)
+        } else if match([TokenType.BOOLEAN]) {
+            ASTNode.init(NodeType.LITERAL, "boolean", [ASTNode.init(NodeType.LITERAL, tokens[position-1].value, 0, 0)], 0, 0)
+        } else if match([TokenType.NULL]) {
+            ASTNode.init(NodeType.LITERAL, "null", 0, 0)
+        } else if match([TokenType.LEFT_PAREN]) {
+            let expr = parse_expression(0)
+            expect(TokenType.RIGHT_PAREN)
+            expr
+        } else if match([TokenType.LEFT_BRACE]) {
+            parse_block()
+        } else if current_token.type == TokenType.IDENTIFIER {
+            let name = current_token.value
+            advance()
+            
+            if match([TokenType.LEFT_PAREN]) {
+                parse_function_call(name)
+            } else {
+                ASTNode.init(NodeType.IDENTIFIER, name, tokens[position-1].line, tokens[position-1].column)
+            }
+        } else if current_token.type == TokenType.NEWLINE {
+            advance()
+            parse_primary()
+        } else {
+            print("Unexpected token in expression: " + current_token.type)
+            // In a real implementation, this would throw an error
+            ASTNode.init(NodeType.LITERAL, "null", 0, 0)
+        }
+    }
+    
+    // Parse function call
+    fun parse_function_call(func_name: String) -> ASTNode {
+        let args = []
+        
+        while current_token.type != TokenType.RIGHT_PAREN and current_token.type != TokenType.EOF {
+            if current_token.type == TokenType.NEWLINE {
+                advance()
+                continue
+            }
+            args = args + [parse_expression(0)]
+            if not match([TokenType.COMMA]) {
+                break
+            }
+        }
+        
+        expect(TokenType.RIGHT_PAREN)
+        
+        let call_node = ASTNode.init(NodeType.CALL, func_name, 0, 0)
+        let i = 0
+        while i < length(args) {
+            call_node = call_node.add_child(args[i])
+            i = i + 1
+        }
+        
+        call_node
+    }
+    
+    // Parse pipeline expression
+    fun parse_pipeline(left: ASTNode) -> ASTNode {
+        let transformations = [left]
+        
+        while current_token.type == TokenType.FUNCTION_ARROW {
+            advance()
+            
+            if current_token.type == TokenType.IDENTIFIER {
+                let func_name = current_token.value
+                advance()
+                
+                // Parse arguments if present
+                let args = []
+                if match([TokenType.LEFT_PAREN]) {
+                    while current_token.type != TokenType.RIGHT_PAREN and current_token.type != TokenType.EOF {
+                        args = args + [parse_expression(0)]
+                        if not match([TokenType.COMMA]) {
+                            break
+                        }
+                    }
+                    expect(TokenType.RIGHT_PAREN)
+                }
+                
+                let call_node = ASTNode.init(NodeType.CALL, func_name, 0, 0)
+                let i = 0
+                while i < length(args) {
+                    call_node = call_node.add_child(args[i])
+                    i = i + 1
+                }
+                
+                transformations = transformations + [call_node]
+            } else {
+                print("Expected function name after arrow")
+                // In a real implementation, this would throw an error
+            }
+        }
+        
+        ASTNode.init(NodeType.PIPELINE, "", transformations, 0, 0)
+    }
+    
+    // Get operator precedence
+    fun get_precedence(token_type: String) -> Int {
+        if token_type == TokenType.OR {
+            1
+        } else if token_type == TokenType.AND {
+            2
+        } else if token_type == TokenType.EQUALS or token_type == TokenType.NOT_EQUALS {
+            3
+        } else if token_type in [TokenType.LESS_THAN, TokenType.GREATER_THAN, TokenType.LESS_EQUALS, TokenType.GREATER_EQUALS] {
+            4
+        } else if token_type in [TokenType.PLUS, TokenType.MINUS] {
+            5
+        } else if token_type in [TokenType.MULTIPLY, TokenType.DIVIDE, TokenType.MODULO] {
+            6
+        } else if token_type == TokenType.FUNCTION_ARROW {
+            0  // Lowest precedence for pipelines
+        } else {
+            0
+        }
+    }
+    
+    // Placeholder implementations for other statement types
+    fun parse_class() -> ASTNode {
+        print("Class parsing not implemented yet")
+        ASTNode.init(NodeType.CLASS, "", 0, 0)
+    }
+    
+    fun parse_if_statement() -> ASTNode {
+        print("If statement parsing not implemented yet")
+        ASTNode.init(NodeType.IF, "", 0, 0)
+    }
+    
+    fun parse_match_statement() -> ASTNode {
+        print("Match statement parsing not implemented yet")
+        ASTNode.init(NodeType.MATCH, "", 0, 0)
+    }
+    
+    fun parse_while_statement() -> ASTNode {
+        print("While statement parsing not implemented yet")
+        ASTNode.init(NodeType.WHILE, "", 0, 0)
+    }
+    
+    fun parse_for_statement() -> ASTNode {
+        print("For statement parsing not implemented yet")
+        ASTNode.init(NodeType.FOR, "", 0, 0)
+    }
+    
+    fun parse_return_statement() -> ASTNode {
+        print("Return statement parsing not implemented yet")
+        ASTNode.init(NodeType.RETURN, "", 0, 0)
+    }
+    
+    fun parse_spawn_statement() -> ASTNode {
+        print("Spawn statement parsing not implemented yet")
+        ASTNode.init(NodeType.SPAWN, "", 0, 0)
+    }
+    
+    fun parse_expression_statement() -> ASTNode {
+        let expr = parse_expression(0)
+        ASTNode.init(NodeType.EXPRESSION_STMT, "", [expr], 0, 0)
+    }
+    
+    // Debug method to print AST
+    fun print_ast(node: ASTNode, indent: Int) {
+        let indent_str = ""
+        let i = 0
+        while i < indent {
+            indent_str = indent_str + "  "
+            i = i + 1
+        }
+        
+        print(indent_str + node.type + ": " + node.value)
+        
+        i = 0
+        while i < length(node.children) {
+            print_ast(node.children[i], indent + 1)
+            i = i + 1
+        }
+    }
+}
+
+// Main function for testing
+fun main() {
+    let source = "fun main() {\n    print(\"Hello, Korlan!\")\n}\n"
+    
+    print("=== Korlan Parser Test ===")
+    print("Input:")
+    print(source)
+    
+    // Tokenize
+    let lexer = Lexer.init(source)
+    let tokens = lexer.tokenize()
+    
+    print("\nTokens:")
+    lexer.print_tokens()
+    
+    // Parse
+    let parser = Parser.init(tokens)
+    let ast = parser.parse()
+    
+    print("\nAST:")
+    parser.print_ast(ast, 0)
+    
+    print("\nParsing complete!")
+}

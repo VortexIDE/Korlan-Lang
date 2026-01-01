@@ -1,0 +1,27 @@
+// Korlan Standard Library - I/O Operations
+// Core input/output functions for the Korlan language
+
+// Print function - outputs values to console
+fun print(value) -> Null {
+    // This will be implemented as a built-in in the VM
+    // For now, we'll use the VM's built-in print
+    builtin_print(value)
+}
+
+// Print with newline
+fun println(value) -> Null {
+    print(value)
+    print("\n")
+}
+
+// Read input from user (placeholder for future implementation)
+fun read() -> String {
+    // This will be implemented as a built-in in the VM
+    builtin_read()
+}
+
+// Read line with prompt
+fun read_line(prompt) -> String {
+    print(prompt)
+    read()
+}

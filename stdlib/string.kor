@@ -1,0 +1,188 @@
+// Korlan Standard Library - String Operations
+// Essential string manipulation functions for the Lexer
+
+// Get character at position
+fun char_at(s: String, index: Int) -> String {
+    if index < 0 or index >= length(s) {
+        return ""
+    }
+    // This will be implemented as a built-in in the VM
+    builtin_char_at(s, index)
+}
+
+// Get string length
+fun length(s: String) -> Int {
+    // This will be implemented as a built-in in the VM
+    builtin_length(s)
+}
+
+// Check if string starts with prefix
+fun starts_with(s: String, prefix: String) -> Bool {
+    if length(prefix) > length(s) {
+        return false
+    }
+    
+    let i = 0
+    while i < length(prefix) {
+        if char_at(s, i) != char_at(prefix, i) {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+// Check if string ends with suffix
+fun ends_with(s: String, suffix: String) -> Bool {
+    if length(suffix) > length(s) {
+        return false
+    }
+    
+    let start = length(s) - length(suffix)
+    let i = 0
+    while i < length(suffix) {
+        if char_at(s, start + i) != char_at(suffix, i) {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+// Split string by delimiter
+fun split(s: String, delimiter: String) -> List<String> {
+    let result = []
+    let current = ""
+    let i = 0
+    
+    while i < length(s) {
+        let found = true
+        let j = 0
+        
+        // Check if delimiter matches at current position
+        while j < length(delimiter) and i + j < length(s) {
+            if char_at(s, i + j) != char_at(delimiter, j) {
+                found = false
+                break
+            }
+            j = j + 1
+        }
+        
+        if found and j == length(delimiter) {
+            // Add current part to result
+            if length(current) > 0 {
+                result = result + [current]
+                current = ""
+            }
+            i = i + length(delimiter)
+        } else {
+            // Add character to current part
+            current = current + char_at(s, i)
+            i = i + 1
+        }
+    }
+    
+    // Add final part
+    if length(current) > 0 {
+        result = result + [current]
+    }
+    
+    result
+}
+
+// Join list of strings with delimiter
+fun join(strings: List<String>, delimiter: String) -> String {
+    if length(strings) == 0 {
+        return ""
+    }
+    
+    let result = strings[0]
+    let i = 1
+    
+    while i < length(strings) {
+        result = result + delimiter + strings[i]
+        i = i + 1
+    }
+    
+    result
+}
+
+// Trim whitespace from start and end
+fun trim(s: String) -> String {
+    let start = 0
+    let end = length(s) - 1
+    
+    // Find first non-whitespace character
+    while start <= end and is_whitespace(char_at(s, start)) {
+        start = start + 1
+    }
+    
+    // Find last non-whitespace character
+    while end >= start and is_whitespace(char_at(s, end)) {
+        end = end - 1
+    }
+    
+    // Extract substring
+    let result = ""
+    let i = start
+    while i <= end {
+        result = result + char_at(s, i)
+        i = i + 1
+    }
+    
+    result
+}
+
+// Check if character is whitespace
+fun is_whitespace(c: String) -> Bool {
+    c == " " or c == "\t" or c == "\n" or c == "\r"
+}
+
+// Check if character is digit
+fun is_digit(c: String) -> Bool {
+    c >= "0" and c <= "9"
+}
+
+// Check if character is letter
+fun is_letter(c: String) -> Bool {
+    (c >= "a" and c <= "z") or (c >= "A" and c <= "Z") or c == "_"
+}
+
+// Convert string to integer
+fun to_int(s: String) -> Int {
+    let result = 0
+    let i = 0
+    let negative = false
+    
+    // Handle negative sign
+    if i < length(s) and char_at(s, i) == "-" {
+        negative = true
+        i = i + 1
+    }
+    
+    while i < length(s) {
+        let c = char_at(s, i)
+        if is_digit(c) {
+            result = result * 10 + (to_int_char(c) - to_int_char("0"))
+        }
+        i = i + 1
+    }
+    
+    if negative {
+        -result
+    } else {
+        result
+    }
+}
+
+// Convert character to integer (helper)
+fun to_int_char(c: String) -> Int {
+    // This will be implemented as a built-in in the VM
+    builtin_to_int_char(c)
+}
+
+// Convert integer to string
+fun to_string(n: Int) -> String {
+    // This will be implemented as a built-in in the VM
+    builtin_to_string(n)
+}

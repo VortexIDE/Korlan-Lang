@@ -1,0 +1,537 @@
+// Korlan Bytecode Emitter - Written in Korlan itself
+// The Brain's Translator: Converts AST into bytecode for the KVM
+
+// Import parser
+import "./parser.kor"
+
+// Bytecode opcodes
+class OpCode {
+    // Stack operations
+    static PUSH_INT = "PUSH_INT"
+    static PUSH_FLOAT = "PUSH_FLOAT"
+    static PUSH_STRING = "PUSH_STRING"
+    static PUSH_BOOL = "PUSH_BOOL"
+    static PUSH_NULL = "PUSH_NULL"
+    static POP = "POP"
+    static DUP = "DUP"
+    static SWAP = "SWAP"
+    
+    // Variable operations
+    static LOAD_VAR = "LOAD_VAR"
+    static STORE_VAR = "STORE_VAR"
+    static LOAD_GLOBAL = "LOAD_GLOBAL"
+    static STORE_GLOBAL = "STORE_GLOBAL"
+    
+    // Function operations
+    static CALL_FUNC = "CALL_FUNC"
+    static RETURN = "RETURN"
+    static CLOSURE = "CLOSURE"
+    
+    // Control flow
+    static JUMP = "JUMP"
+    static JUMP_IF_FALSE = "JUMP_IF_FALSE"
+    static JUMP_IF_TRUE = "JUMP_IF_TRUE"
+    
+    // Binary operations
+    static ADD = "ADD"
+    static SUBTRACT = "SUBTRACT"
+    static MULTIPLY = "MULTIPLY"
+    static DIVIDE = "DIVIDE"
+    static MODULO = "MODULO"
+    
+    // Comparison operations
+    static EQUALS = "EQUALS"
+    static NOT_EQUALS = "NOT_EQUALS"
+    static LESS_THAN = "LESS_THAN"
+    static GREATER_THAN = "GREATER_THAN"
+    static LESS_EQUALS = "LESS_EQUALS"
+    static GREATER_EQUALS = "GREATER_EQUALS"
+    
+    // Logical operations
+    static AND = "AND"
+    static OR = "OR"
+    static NOT = "NOT"
+    
+    // Other operations
+    static PRINT = "PRINT"
+    static HALT = "HALT"
+}
+
+// Instruction class
+class Instruction {
+    let opcode: String
+    let operand: String
+    let line: Int
+    let column: Int
+    
+    fun init(opcode: String, operand: String, line: Int, column: Int) -> Instruction {
+        Instruction {
+            opcode: opcode,
+            operand: operand,
+            line: line,
+            column: column
+        }
+    }
+    
+    // Convenience constructor for instructions without operand
+    fun init(opcode: String, line: Int, column: Int) -> Instruction {
+        Instruction.init(opcode, "", line, column)
+    }
+}
+
+// Compiler class
+class Compiler {
+    let bytecode: List[Instruction]
+    let constants: List[String]
+    let variables: Map[String, Int]
+    let functions: Map[String, Int]
+    let current_function: String
+    let scope_depth: Int
+    
+    // Built-in functions mapping
+    let builtin_functions: Map[String, String]
+    
+    fun init() -> Compiler {
+        let builtins = {
+            "print": OpCode.PRINT
+        }
+        
+        Compiler {
+            bytecode: [],
+            constants: [],
+            variables: {},
+            functions: {},
+            current_function: "",
+            scope_depth: 0,
+            builtin_functions: builtins
+        }
+    }
+    
+    // Emit instruction
+    fun emit(opcode: String, operand: String, line: Int, column: Int) -> Compiler {
+        let instruction = Instruction.init(opcode, operand, line, column)
+        Compiler {
+            bytecode: bytecode + [instruction],
+            constants: constants,
+            variables: variables,
+            functions: functions,
+            current_function: current_function,
+            scope_depth: scope_depth,
+            builtin_functions: builtin_functions
+        }
+    }
+    
+    // Emit instruction without operand
+    fun emit(opcode: String, line: Int, column: Int) -> Compiler {
+        emit(opcode, "", line, column)
+    }
+    
+    // Add constant to constant pool
+    fun add_constant(value: String) -> Compiler {
+        Compiler {
+            bytecode: bytecode,
+            constants: constants + [value],
+            variables: variables,
+            functions: functions,
+            current_function: current_function,
+            scope_depth: scope_depth,
+            builtin_functions: builtin_functions
+        }
+    }
+    
+    // Get variable index
+    fun get_variable_index(name: String) -> Int {
+        variables[name]
+    }
+    
+    // Set variable index
+    fun set_variable_index(name: String) -> Compiler {
+        let index = length(variables)
+        Compiler {
+            bytecode: bytecode,
+            constants: constants,
+            variables: variables + {name: index},
+            functions: functions,
+            current_function: current_function,
+            scope_depth: scope_depth,
+            builtin_functions: builtin_functions
+        }
+    }
+    
+    // Main compilation method
+    fun compile(ast: ASTNode) -> Compiler {
+        compile_node(ast)
+        emit(OpCode.HALT, 0, 0)
+    }
+    
+    // Compile AST node
+    fun compile_node(node: ASTNode) -> Compiler {
+        if node.type == NodeType.PROGRAM {
+            compile_program(node)
+        } else if node.type == NodeType.FUNCTION {
+            compile_function(node)
+        } else if node.type == NodeType.VARIABLE {
+            compile_variable(node)
+        } else if node.type == NodeType.EXPRESSION_STMT {
+            compile_node(node.children[0])
+        } else if node.type == NodeType.BINARY {
+            compile_binary(node)
+        } else if node.type == NodeType.CALL {
+            compile_function_call(node)
+        } else if node.type == NodeType.PIPELINE {
+            compile_pipeline(node)
+        } else if node.type == NodeType.LITERAL {
+            compile_literal(node)
+        } else if node.type == NodeType.IDENTIFIER {
+            compile_identifier(node)
+        } else if node.type == NodeType.BLOCK {
+            compile_block(node)
+        } else {
+            print("Compilation not implemented for node type: " + node.type)
+        }
+    }
+    
+    // Compile program
+    fun compile_program(node: ASTNode) -> Compiler {
+        let result = this
+        let i = 0
+        while i < length(node.children) {
+            result = result.compile_node(node.children[i])
+            i = i + 1
+        }
+        result
+    }
+    
+    // Compile function
+    fun compile_function(node: ASTNode) -> Compiler {
+        let func_name = node.value
+        let result = Compiler {
+            bytecode: bytecode,
+            constants: constants,
+            variables: variables,
+            functions: functions + {func_name: length(bytecode)},
+            current_function: func_name,
+            scope_depth: scope_depth,
+            builtin_functions: builtin_functions
+        }
+        
+        // Compile function body
+        if length(node.children) > 0 {
+            let body = node.children[length(node.children) - 1]
+            if body.type == NodeType.BLOCK {
+                let i = 0
+                while i < length(body.children) {
+                    result = result.compile_node(body.children[i])
+                    i = i + 1
+                }
+            } else {
+                // Single expression function
+                result = result.compile_node(body)
+                result = result.emit(OpCode.RETURN, body.line, body.column)
+            }
+        } else {
+            result = result.emit(OpCode.RETURN, node.line, node.column)
+        }
+        
+        result
+    }
+    
+    // Compile variable declaration
+    fun compile_variable(node: ASTNode) -> Compiler {
+        let var_name = node.value
+        if starts_with(var_name, "mut ") {
+            var_name = substring(var_name, 4) // Remove "mut " prefix
+        }
+        
+        let result = set_variable_index(var_name)
+        
+        // Compile initializer if present
+        if length(node.children) > 0 {
+            let initializer = node.children[length(node.children) - 1]
+            result = result.compile_node(initializer)
+            result = result.emit(OpCode.STORE_VAR, to_string(result.get_variable_index(var_name)), node.line, node.column)
+        } else {
+            // Store default value (null)
+            result = result.emit(OpCode.PUSH_NULL, node.line, node.column)
+            result = result.emit(OpCode.STORE_VAR, to_string(result.get_variable_index(var_name)), node.line, node.column)
+        }
+        
+        result
+    }
+    
+    // Compile block
+    fun compile_block(node: ASTNode) -> Compiler {
+        let result = this
+        let i = 0
+        while i < length(node.children) {
+            result = result.compile_node(node.children[i])
+            i = i + 1
+        }
+        result
+    }
+    
+    // Compile binary expression
+    fun compile_binary(node: ASTNode) -> Compiler {
+        if length(node.children) != 2 {
+            print("Binary expression must have exactly 2 children")
+            return this
+        }
+        
+        let left = node.children[0]
+        let right = node.children[1]
+        
+        let result = compile_node(left)
+        result = result.compile_node(right)
+        
+        // Emit appropriate operation
+        let opcode = ""
+        if node.value == "+" {
+            opcode = OpCode.ADD
+        } else if node.value == "-" {
+            opcode = OpCode.SUBTRACT
+        } else if node.value == "*" {
+            opcode = OpCode.MULTIPLY
+        } else if node.value == "/" {
+            opcode = OpCode.DIVIDE
+        } else if node.value == "%" {
+            opcode = OpCode.MODULO
+        } else if node.value == "==" {
+            opcode = OpCode.EQUALS
+        } else if node.value == "!=" {
+            opcode = OpCode.NOT_EQUALS
+        } else if node.value == "<" {
+            opcode = OpCode.LESS_THAN
+        } else if node.value == ">" {
+            opcode = OpCode.GREATER_THAN
+        } else if node.value == "<=" {
+            opcode = OpCode.LESS_EQUALS
+        } else if node.value == ">=" {
+            opcode = OpCode.GREATER_EQUALS
+        } else if node.value == "&&" {
+            opcode = OpCode.AND
+        } else if node.value == "||" {
+            opcode = OpCode.OR
+        } else {
+            print("Unknown binary operator: " + node.value)
+            return result
+        }
+        
+        result.emit(opcode, node.line, node.column)
+    }
+    
+    // Compile function call
+    fun compile_function_call(node: ASTNode) -> Compiler {
+        let func_name = node.value
+        
+        // Compile arguments
+        let result = this
+        let i = 0
+        while i < length(node.children) {
+            result = result.compile_node(node.children[i])
+            i = i + 1
+        }
+        
+        // Check for built-in functions
+        let builtin_opcode = builtin_functions[func_name]
+        if builtin_opcode != null {
+            result = result.emit(builtin_opcode, to_string(length(node.children)), node.line, node.column)
+        } else {
+            // Call user-defined function
+            let func_index = functions[func_name]
+            if func_index == null {
+                print("Undefined function: " + func_name)
+                return result
+            }
+            result = result.emit(OpCode.CALL_FUNC, to_string(func_index), node.line, node.column)
+        }
+        
+        result
+    }
+    
+    // Compile pipeline expression
+    fun compile_pipeline(node: ASTNode) -> Compiler {
+        if length(node.children) < 2 {
+            print("Pipeline must have at least 2 children")
+            return this
+        }
+        
+        // Compile initial value
+        let result = compile_node(node.children[0])
+        
+        // Compile each transformation
+        let i = 1
+        while i < length(node.children) {
+            let transform = node.children[i]
+            
+            if transform.type == NodeType.CALL {
+                let func_name = transform.value
+                
+                // Compile additional arguments
+                let j = 0
+                while j < length(transform.children) {
+                    result = result.compile_node(transform.children[j])
+                    j = j + 1
+                }
+                
+                // Call the function (current value is already on stack)
+                let builtin_opcode = builtin_functions[func_name]
+                if builtin_opcode != null {
+                    result = result.emit(builtin_opcode, to_string(length(transform.children) + 1), transform.line, transform.column)
+                } else {
+                    let func_index = functions[func_name]
+                    if func_index == null {
+                        print("Undefined function in pipeline: " + func_name)
+                        return result
+                    }
+                    result = result.emit(OpCode.CALL_FUNC, to_string(func_index), transform.line, transform.column)
+                }
+            } else {
+                print("Pipeline transformations must be function calls")
+                return result
+            }
+            
+            i = i + 1
+        }
+        
+        result
+    }
+    
+    // Compile literal
+    fun compile_literal(node: ASTNode) -> Compiler {
+        let value = ""
+        if length(node.children) > 0 {
+            value = node.children[0].value
+        } else {
+            value = node.value
+        }
+        
+        let result = this
+        
+        if node.value == "number" {
+            // Parse number
+            if contains(value, ".") {
+                result = result.emit(OpCode.PUSH_FLOAT, value, node.line, node.column)
+            } else {
+                result = result.emit(OpCode.PUSH_INT, value, node.line, node.column)
+            }
+        } else if node.value == "string" {
+            // Remove quotes from string
+            let str_value = value
+            if starts_with(str_value, "\"") and ends_with(str_value, "\"") {
+                str_value = substring(str_value, 1, length(str_value) - 1)
+            } else if starts_with(str_value, "'") and ends_with(str_value, "'") {
+                str_value = substring(str_value, 1, length(str_value) - 1)
+            }
+            
+            result = result.add_constant(str_value)
+            result = result.emit(OpCode.PUSH_STRING, to_string(length(result.constants) - 1), node.line, node.column)
+        } else if node.value == "boolean" {
+            let bool_value = value == "true"
+            result = result.emit(OpCode.PUSH_BOOL, to_string(bool_value), node.line, node.column)
+        } else if node.value == "null" {
+            result = result.emit(OpCode.PUSH_NULL, node.line, node.column)
+        } else {
+            // Direct value
+            if is_number(value) {
+                if contains(value, ".") {
+                    result = result.emit(OpCode.PUSH_FLOAT, value, node.line, node.column)
+                } else {
+                    result = result.emit(OpCode.PUSH_INT, value, node.line, node.column)
+                }
+            } else if value == "true" or value == "false" {
+                result = result.emit(OpCode.PUSH_BOOL, value, node.line, node.column)
+            } else if value == "null" or value == "" {
+                result = result.emit(OpCode.PUSH_NULL, node.line, node.column)
+            } else {
+                result = result.add_constant(value)
+                result = result.emit(OpCode.PUSH_STRING, to_string(length(result.constants) - 1), node.line, node.column)
+            }
+        }
+        
+        result
+    }
+    
+    // Compile identifier (variable access)
+    fun compile_identifier(node: ASTNode) -> Compiler {
+        let var_name = node.value
+        let var_index = get_variable_index(var_name)
+        
+        if var_index == null {
+            print("Undefined variable: " + var_name)
+            return this
+        }
+        
+        emit(OpCode.LOAD_VAR, to_string(var_index), node.line, node.column)
+    }
+    
+    // Debug method to print bytecode
+    fun print_bytecode() {
+        print("=== Korlan Bytecode ===")
+        print("Constants: " + to_string(constants))
+        print("Variables: " + to_string(variables))
+        print("Functions: " + to_string(functions))
+        print("\nInstructions:")
+        
+        let i = 0
+        while i < length(bytecode) {
+            let instruction = bytecode[i]
+            let operand_str = " " + instruction.operand if length(instruction.operand) > 0 else ""
+            print(to_string(i) + ": " + instruction.opcode + operand_str)
+            i = i + 1
+        }
+    }
+}
+
+// Helper functions (these would be built-ins in a real implementation)
+fun starts_with(s: String, prefix: String) -> Bool {
+    // Implementation would be built-in
+    true
+}
+
+fun ends_with(s: String, suffix: String) -> Bool {
+    // Implementation would be built-in
+    true
+}
+
+fun substring(s: String, start: Int, end: Int) -> String {
+    // Implementation would be built-in
+    s
+}
+
+fun contains(s: String, substr: String) -> Bool {
+    // Implementation would be built-in
+    true
+}
+
+fun is_number(s: String) -> Bool {
+    // Implementation would be built-in
+    true
+}
+
+// Main function for testing
+fun main() {
+    let source = "fun main() {\n    print(\"Hello, Korlan!\")\n}\n"
+    
+    print("=== Korlan Compiler Test ===")
+    print("Input:")
+    print(source)
+    
+    // Parse
+    let lexer = Lexer.init(source)
+    let tokens = lexer.tokenize()
+    
+    let parser = Parser.init(tokens)
+    let ast = parser.parse()
+    
+    print("\nAST:")
+    parser.print_ast(ast, 0)
+    
+    // Compile
+    let compiler = Compiler.init()
+    let result = compiler.compile(ast)
+    
+    print("\nBytecode:")
+    result.print_bytecode()
+    
+    print("\nCompilation complete!")
+}

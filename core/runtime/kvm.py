@@ -37,6 +37,12 @@ class KorlanVM:
         # Built-in functions
         self.builtins: Dict[str, Callable] = {
             "print": self.builtin_print,
+            "builtin_print": self.builtin_print,
+            "builtin_read": self.builtin_read,
+            "builtin_char_at": self.builtin_char_at,
+            "builtin_length": self.builtin_length,
+            "builtin_to_int_char": self.builtin_to_int_char,
+            "builtin_to_string": self.builtin_to_string,
         }
         
         # Statistics
@@ -377,6 +383,30 @@ class KorlanVM:
         output = " ".join(str(arg) for arg in args)
         print(output)
         return None
+    
+    def builtin_read(self):
+        """Built-in read function"""
+        return input()
+    
+    def builtin_char_at(self, s: str, index: int) -> str:
+        """Get character at index"""
+        if 0 <= index < len(s):
+            return s[index]
+        return ""
+    
+    def builtin_length(self, s: str) -> int:
+        """Get string length"""
+        return len(s)
+    
+    def builtin_to_int_char(self, c: str) -> int:
+        """Convert character to integer"""
+        if len(c) == 1 and c.isdigit():
+            return int(c)
+        return 0
+    
+    def builtin_to_string(self, n: int) -> str:
+        """Convert integer to string"""
+        return str(n)
     
     def get_stats(self) -> Dict[str, Any]:
         """Get execution statistics"""

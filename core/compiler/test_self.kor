@@ -1,0 +1,53 @@
+// The Inception Test - Korlan Lexer Tokenizing Itself
+// This is the moment of truth: Can Korlan compile itself?
+
+// Import our lexer written in Korlan
+import "./lexer.kor"
+
+// The source code of our own lexer (simplified version for testing)
+let lexer_source = "fun main() {\n    print(\"Korlan is now independent\")\n}\n"
+
+print("=== The Inception Test ===")
+print("Can the Korlan lexer tokenize itself?")
+print("")
+
+// Use our Korlan-written lexer to tokenize the source
+let lexer = Lexer.init(lexer_source)
+let tokens = lexer.tokenize()
+
+print("Tokenization result:")
+print("Number of tokens: " + to_string(length(tokens)))
+
+// Print first few tokens to verify
+print("\nFirst 5 tokens:")
+let i = 0
+while i < 5 and i < length(tokens) {
+    let token = tokens[i]
+    print(to_string(i) + ": " + token.type + " '" + token.value + "'")
+    i = i + 1
+}
+
+// Verify we have the expected tokens
+let expected_tokens = ["FUN", "IDENTIFIER", "LEFT_PAREN", "RIGHT_PAREN", "LEFT_BRACE"]
+let success = true
+let j = 0
+
+while j < length(expected_tokens) and j < length(tokens) {
+    if tokens[j].type != expected_tokens[j] {
+        success = false
+        break
+    }
+    j = j + 1
+}
+
+print("")
+if success {
+    print("🎉 SUCCESS! Korlan can tokenize itself!")
+    print("Korlan is 50% independent!")
+} else {
+    print("❌ FAILED! Self-tokenization failed.")
+    print("Expected: " + expected_tokens[j] + ", got: " + tokens[j].type)
+}
+
+print("")
+print("=== Inception Test Complete ===")

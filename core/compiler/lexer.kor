@@ -1,0 +1,462 @@
+// Korlan Lexer - Written in Korlan itself
+// The Eyes of the Language: Converts source text into tokens
+
+// Import standard library
+import "../stdlib/io.kor"
+import "../stdlib/string.kor"
+
+// Token types enumeration
+class TokenType {
+    // Keywords
+    static FUN = "FUN"
+    static MUT = "MUT"
+    static CLASS = "CLASS"
+    static IF = "IF"
+    static MATCH = "MATCH"
+    static SPAWN = "SPAWN"
+    static INIT = "INIT"
+    static ELSE = "ELSE"
+    static WHILE = "WHILE"
+    static FOR = "FOR"
+    static RETURN = "RETURN"
+    static BREAK = "BREAK"
+    static CONTINUE = "CONTINUE"
+    static NULL = "NULL"
+    
+    // Operators
+    static FUNCTION_ARROW = "FUNCTION_ARROW"      // ->
+    static SINGLE_EXPR_ARROW = "SINGLE_EXPR_ARROW"  // =>
+    static NULL_SAFETY = "NULL_SAFETY"           // ?
+    static ASSIGN = "ASSIGN"                     // =
+    static EQUALS = "EQUALS"                     // ==
+    static NOT_EQUALS = "NOT_EQUALS"             // !=
+    static LESS_THAN = "LESS_THAN"               // <
+    static GREATER_THAN = "GREATER_THAN"         // >
+    static LESS_EQUALS = "LESS_EQUALS"           // <=
+    static GREATER_EQUALS = "GREATER_EQUALS"     // >=
+    static PLUS = "PLUS"                         // +
+    static MINUS = "MINUS"                       // -
+    static MULTIPLY = "MULTIPLY"                 // *
+    static DIVIDE = "DIVIDE"                     // /
+    static MODULO = "MODULO"                     // %
+    static AND = "AND"                           // &&
+    static OR = "OR"                            // ||
+    static NOT = "NOT"                           // !
+    
+    // Delimiters
+    static LEFT_PAREN = "LEFT_PAREN"             // (
+    static RIGHT_PAREN = "RIGHT_PAREN"           // )
+    static LEFT_BRACE = "LEFT_BRACE"             // {
+    static RIGHT_BRACE = "RIGHT_BRACE"           // }
+    static LEFT_BRACKET = "LEFT_BRACKET"         // [
+    static RIGHT_BRACKET = "RIGHT_BRACKET"       // ]
+    static COMMA = "COMMA"                       // ,
+    static DOT = "DOT"                           // .
+    static COLON = "COLON"                       // :
+    
+    // Literals and Identifiers
+    static IDENTIFIER = "IDENTIFIER"
+    static NUMBER = "NUMBER"
+    static STRING = "STRING"
+    static BOOLEAN = "BOOLEAN"
+    
+    // Special
+    static NEWLINE = "NEWLINE"
+    static INDENT = "INDENT"
+    static DEDENT = "DEDENT"
+    static EOF = "EOF"
+    static ILLEGAL = "ILLEGAL"
+}
+
+// Token class
+class Token {
+    let type: String
+    let value: String
+    let line: Int
+    let column: Int
+    
+    fun init(type: String, value: String, line: Int, column: Int) -> Token {
+        Token {
+            type: type,
+            value: value,
+            line: line,
+            column: column
+        }
+    }
+}
+
+// Lexer class
+class Lexer {
+    let source: String
+    let position: Int
+    let line: Int
+    let column: Int
+    let tokens: List[Token]
+    
+    // Keywords mapping
+    let keywords: Map[String, String]
+    
+    fun init(source: String) -> Lexer {
+        let keywords = {
+            "fun": TokenType.FUN,
+            "mut": TokenType.MUT,
+            "class": TokenType.CLASS,
+            "if": TokenType.IF,
+            "match": TokenType.MATCH,
+            "spawn": TokenType.SPAWN,
+            "init": TokenType.INIT,
+            "else": TokenType.ELSE,
+            "while": TokenType.WHILE,
+            "for": TokenType.FOR,
+            "return": TokenType.RETURN,
+            "break": TokenType.BREAK,
+            "continue": TokenType.CONTINUE,
+            "null": TokenType.NULL,
+            "true": TokenType.BOOLEAN,
+            "false": TokenType.BOOLEAN
+        }
+        
+        Lexer {
+            source: source,
+            position: 0,
+            line: 1,
+            column: 1,
+            tokens: [],
+            keywords: keywords
+        }
+    }
+    
+    // Get current character
+    fun current_char() -> String {
+        if position >= length(source) {
+            return ""
+        }
+        char_at(source, position)
+    }
+    
+    // Peek ahead
+    fun peek(offset: Int) -> String {
+        let peek_pos = position + offset
+        if peek_pos >= length(source) {
+            return ""
+        }
+        char_at(source, peek_pos)
+    }
+    
+    // Advance position
+    fun advance() {
+        if position < length(source) {
+            let char = current_char()
+            position = position + 1
+            
+            if char == "\n" {
+                line = line + 1
+                column = 1
+            } else {
+                column = column + 1
+            }
+        }
+    }
+    
+    // Skip whitespace
+    fun skip_whitespace() {
+        while is_whitespace(current_char()) {
+            if current_char() == "\n" {
+                tokens = tokens + [Token.init(TokenType.NEWLINE, "\n", line, column)]
+            }
+            advance()
+        }
+    }
+    
+    // Skip comments
+    fun skip_comment() {
+        if current_char() == "/" and peek(1) == "/" {
+            while current_char() != "\n" and current_char() != "" {
+                advance()
+            }
+        }
+    }
+    
+    // Check for ceremony error (semicolons)
+    fun check_ceremony() {
+        if current_char() == ";" {
+            print("Ceremony Error: Semicolons are not allowed in Korlan. Remove the semicolon and embrace simplicity!")
+            // In a real implementation, this would throw an error
+        }
+    }
+    
+    // Read string literal
+    fun read_string(quote: String) -> String {
+        advance() // Skip opening quote
+        let result = ""
+        
+        while current_char() != quote and current_char() != "" {
+            if current_char() == "\\" {
+                advance() // Skip backslash
+                let escaped = current_char()
+                
+                // Handle escape sequences
+                if escaped == "n" {
+                    result = result + "\n"
+                } else if escaped == "t" {
+                    result = result + "\t"
+                } else if escaped == "r" {
+                    result = result + "\r"
+                } else if escaped == "\\" {
+                    result = result + "\\"
+                } else if escaped == "\"" {
+                    result = result + "\""
+                } else if escaped == "'" {
+                    result = result + "'"
+                } else {
+                    result = result + escaped
+                }
+                advance()
+            } else {
+                result = result + current_char()
+                advance()
+            }
+        }
+        
+        if current_char() != quote {
+            print("Unterminated string literal")
+            // In a real implementation, this would throw an error
+        }
+        
+        advance() // Skip closing quote
+        result
+    }
+    
+    // Read number
+    fun read_number() -> String {
+        let result = ""
+        let has_dot = false
+        
+        while is_digit(current_char()) or (current_char() == "." and not has_dot) {
+            if current_char() == "." {
+                has_dot = true
+            }
+            result = result + current_char()
+            advance()
+        }
+        
+        result
+    }
+    
+    // Read identifier
+    fun read_identifier() -> String {
+        let result = ""
+        
+        while is_letter(current_char()) or is_digit(current_char()) {
+            result = result + current_char()
+            advance()
+        }
+        
+        result
+    }
+    
+    // Check multi-character operators
+    fun check_multi_char_op() -> String {
+        let two_char = current_char() + peek(1)
+        
+        if two_char == "->" {
+            advance()
+            advance()
+            return two_char
+        } else if two_char == "=>" {
+            advance()
+            advance()
+            return two_char
+        } else if two_char == "==" {
+            advance()
+            advance()
+            return two_char
+        } else if two_char == "!=" {
+            advance()
+            advance()
+            return two_char
+        } else if two_char == "<=" {
+            advance()
+            advance()
+            return two_char
+        } else if two_char == ">=" {
+            advance()
+            advance()
+            return two_char
+        } else if two_char == "&&" {
+            advance()
+            advance()
+            return two_char
+        } else if two_char == "||" {
+            advance()
+            advance()
+            return two_char
+        }
+        
+        return ""
+    }
+    
+    // Main tokenization method
+    fun tokenize() -> List[Token] {
+        while position < length(source) {
+            skip_whitespace()
+            
+            if position >= length(source) {
+                break
+            }
+            
+            let char = current_char()
+            
+            // Check for ceremony errors
+            check_ceremony()
+            
+            // Skip comments
+            if char == "/" and peek(1) == "/" {
+                skip_comment()
+                continue
+            }
+            
+            // Check for strings
+            if char == "\"" or char == "'" {
+                let value = read_string(char)
+                tokens = tokens + [Token.init(TokenType.STRING, value, line, column - length(value))]
+                continue
+            }
+            
+            // Check for multi-character operators
+            let multi_op = check_multi_char_op()
+            if length(multi_op) > 0 {
+                let token_type = ""
+                
+                if multi_op == "->" {
+                    token_type = TokenType.FUNCTION_ARROW
+                } else if multi_op == "=>" {
+                    token_type = TokenType.SINGLE_EXPR_ARROW
+                } else if multi_op == "==" {
+                    token_type = TokenType.EQUALS
+                } else if multi_op == "!=" {
+                    token_type = TokenType.NOT_EQUALS
+                } else if multi_op == "<=" {
+                    token_type = TokenType.LESS_EQUALS
+                } else if multi_op == ">=" {
+                    token_type = TokenType.GREATER_EQUALS
+                } else if multi_op == "&&" {
+                    token_type = TokenType.AND
+                } else if multi_op == "||" {
+                    token_type = TokenType.OR
+                }
+                
+                tokens = tokens + [Token.init(token_type, multi_op, line, column - 1)]
+                continue
+            }
+            
+            // Check for single-character tokens
+            let token_type = ""
+            let found = true
+            
+            if char == "(" {
+                token_type = TokenType.LEFT_PAREN
+            } else if char == ")" {
+                token_type = TokenType.RIGHT_PAREN
+            } else if char == "{" {
+                token_type = TokenType.LEFT_BRACE
+            } else if char == "}" {
+                token_type = TokenType.RIGHT_BRACE
+            } else if char == "[" {
+                token_type = TokenType.LEFT_BRACKET
+            } else if char == "]" {
+                token_type = TokenType.RIGHT_BRACKET
+            } else if char == "," {
+                token_type = TokenType.COMMA
+            } else if char == "." {
+                token_type = TokenType.DOT
+            } else if char == ":" {
+                token_type = TokenType.COLON
+            } else if char == "?" {
+                token_type = TokenType.NULL_SAFETY
+            } else if char == "=" {
+                token_type = TokenType.ASSIGN
+            } else if char == "<" {
+                token_type = TokenType.LESS_THAN
+            } else if char == ">" {
+                token_type = TokenType.GREATER_THAN
+            } else if char == "+" {
+                token_type = TokenType.PLUS
+            } else if char == "-" {
+                token_type = TokenType.MINUS
+            } else if char == "*" {
+                token_type = TokenType.MULTIPLY
+            } else if char == "/" {
+                token_type = TokenType.DIVIDE
+            } else if char == "%" {
+                token_type = TokenType.MODULO
+            } else if char == "!" {
+                token_type = TokenType.NOT
+            } else {
+                found = false
+            }
+            
+            if found {
+                tokens = tokens + [Token.init(token_type, char, line, column)]
+                advance()
+                continue
+            }
+            
+            // Check for numbers
+            if is_digit(char) {
+                let value = read_number()
+                tokens = tokens + [Token.init(TokenType.NUMBER, value, line, column - length(value) + 1)]
+                continue
+            }
+            
+            // Check for identifiers
+            if is_letter(char) {
+                let value = read_identifier()
+                
+                // Check if it's a keyword
+                let keyword_type = keywords[value]
+                if keyword_type != null {
+                    tokens = tokens + [Token.init(keyword_type, value, line, column - length(value) + 1)]
+                } else {
+                    tokens = tokens + [Token.init(TokenType.IDENTIFIER, value, line, column - length(value) + 1)]
+                }
+                continue
+            }
+            
+            // Unknown character
+            print("Unexpected character: " + char)
+            advance()
+        }
+        
+        // Add EOF token
+        tokens = tokens + [Token.init(TokenType.EOF, "", line, column)]
+        tokens
+    }
+    
+    // Debug method to print tokens
+    fun print_tokens() {
+        print("=== Tokens ===")
+        let i = 0
+        while i < length(tokens) {
+            let token = tokens[i]
+            print(to_string(i) + ": " + token.type + " '" + token.value + "' (line " + to_string(token.line) + ", col " + to_string(token.column) + ")")
+            i = i + 1
+        }
+    }
+}
+
+// Main function for testing
+fun main() {
+    let source = "fun main() {\n    print(\"Hello, Korlan!\")\n}\n"
+    
+    print("=== Korlan Lexer Test ===")
+    print("Input:")
+    print(source)
+    print("\nOutput:")
+    
+    let lexer = Lexer.init(source)
+    let tokens = lexer.tokenize()
+    lexer.print_tokens()
+    
+    print("\nTokenization complete!")
+}
