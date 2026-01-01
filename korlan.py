@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'core'))
 from lexer import KorlanLexer, LexerError
 from parser import KorlanParser, ParserError
 from compiler import KorlanCompiler, CompilerError
-from semantic import SemanticAnalyzer, SemanticError
+from checker import SemanticChecker, KorlanError
 from runtime.kvm import KorlanVM, KVMError
 
 class KorlanRunner:
@@ -71,18 +71,16 @@ class KorlanRunner:
             if self.debug:
                 print("\n--- Phase 2.5: Semantic Analysis ---")
             
-            semantic_analyzer = SemanticAnalyzer()
-            semantic_success = semantic_analyzer.analyze(ast)
+            checker = SemanticChecker()
+            semantic_success = checker.check(ast)
             
             if not semantic_success:
-                print("Semantic analysis failed:")
-                for error in semantic_analyzer.get_errors():
-                    print(f"  {error}")
+                checker.print_errors()
                 return False
             
             if self.debug:
                 print("Semantic analysis passed")
-                semantic_analyzer.print_symbols()
+                checker.print_symbols()
             
             # Phase 3: Compilation
             if self.debug:
@@ -112,19 +110,21 @@ class KorlanRunner:
             return True
             
         except LexerError as e:
-            print(f"Lexer Error: {e.message}")
+            print(f"Lexer Error at line {e.line}, column {e.column}: {e.message}")
             return False
         except ParserError as e:
-            print(f"Parser Error: {e.message}")
+            print(f"Parser Error at line {e.line}, column {e.column}: {e.message}")
             return False
-        except SemanticError as e:
-            print(f"Semantic Error: {e.message}")
+        except KorlanError as e:
+            print(f"Korlan {e.error_type} at line {e.line}, column {e.column}: {e.message}")
             return False
         except CompilerError as e:
-            print(f"Compiler Error: {e.message}")
+            print(f"Compiler Error at line {e.node.line}, column {e.node.column}: {e.message}")
             return False
         except KVMError as e:
-            print(f"Runtime Error: {e.message}")
+            print(f"Runtime Error at instruction {e.ip}: {e.message}")
+            if e.instruction:
+                print(f"  Instruction: {e.instruction.opcode.value} {e.instruction.operand or ''}")
             return False
         except Exception as e:
             print(f"Unexpected Error: {e}")

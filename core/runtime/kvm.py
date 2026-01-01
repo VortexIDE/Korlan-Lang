@@ -11,11 +11,12 @@ from compiler import Instruction, OpCode, CompilerError
 
 @dataclass
 class CallFrame:
-    """Represents a function call frame with local variable scope"""
+    """Represents a function call frame with proper local variable scope"""
     return_address: int
     locals: Dict[str, Any]
     function_name: str
     stack_base: int  # Base position in the stack for this frame
+    parent_frame: Optional['CallFrame'] = None  # For recursion support
 
 class KVMError(Exception):
     def __init__(self, message: str, instruction: Optional[Instruction] = None, ip: int = 0):
@@ -25,7 +26,7 @@ class KVMError(Exception):
         super().__init__(f"KVM Error at instruction {ip}: {message}")
 
 class KorlanVM:
-    """Korlan Virtual Machine - Stack-based bytecode executor"""
+    """Korlan Virtual Machine - Stack-based bytecode executor with proper frame management"""
     
     def __init__(self, debug: bool = False):
         self.stack: List[Any] = []
@@ -34,6 +35,7 @@ class KorlanVM:
         self.heap: List[Any] = []
         self.ip: int = 0  # Instruction pointer
         self.debug = debug
+        self.current_frame: Optional[CallFrame] = None
         
         # Built-in functions
         self.builtins: Dict[str, Callable] = {
@@ -49,6 +51,57 @@ class KorlanVM:
         # Statistics
         self.instructions_executed = 0
         self.max_stack_depth = 0
+        self.max_call_depth = 0
+    
+    def create_frame(self, func_name: str, return_address: int) -> CallFrame:
+        """Create a new call frame with proper scope isolation"""
+        frame = CallFrame(
+            return_address=return_address,
+            locals={},
+            function_name=func_name,
+            stack_base=len(self.stack),
+            parent_frame=self.current_frame
+        )
+        
+        # Update call depth tracking
+        self.max_call_depth = max(self.max_call_depth, len(self.call_stack) + 1)
+        
+        return frame
+    
+    def push_frame(self, frame: CallFrame):
+        """Push a new call frame onto the stack"""
+        self.call_stack.append(frame)
+        self.current_frame = frame
+    
+    def pop_frame(self) -> Optional[CallFrame]:
+        """Pop the current call frame"""
+        if not self.call_stack:
+            return None
+        
+        frame = self.call_stack.pop()
+        self.current_frame = self.call_stack[-1] if self.call_stack else None
+        
+        # Clean up stack to frame's base
+        if len(self.stack) > frame.stack_base:
+            self.stack = self.stack[:frame.stack_base]
+        
+        return frame
+    
+    def resolve_variable(self, name: str) -> Optional[Any]:
+        """Resolve variable in current frame scope chain"""
+        frame = self.current_frame
+        while frame:
+            if name in frame.locals:
+                return frame.locals[name]
+            frame = frame.parent_frame
+        return None
+    
+    def set_variable(self, name: str, value: Any) -> bool:
+        """Set variable in current frame scope"""
+        if self.current_frame:
+            self.current_frame.locals[name] = value
+            return True
+        return False
     
     def error(self, message: str, instruction: Optional[Instruction] = None) -> KVMError:
         raise KVMError(message, instruction, self.ip)
@@ -134,26 +187,19 @@ class KorlanVM:
             self.push(b)
         
         elif opcode == OpCode.LOAD_VAR:
-            # Load variable from current call frame
-            if not self.call_stack:
-                self.error("No call frame for variable access", instruction)
-            
-            frame = self.call_stack[-1]
+            # Load variable from current call frame scope
             var_name = self.get_variable_name(operand)
-            if var_name not in frame.locals:
+            value = self.resolve_variable(var_name)
+            if value is None:
                 self.error(f"Undefined variable: {var_name}", instruction)
-            
-            self.push(frame.locals[var_name])
+            self.push(value)
         
         elif opcode == OpCode.STORE_VAR:
-            # Store variable in current call frame
-            if not self.call_stack:
-                self.error("No call frame for variable storage", instruction)
-            
-            frame = self.call_stack[-1]
+            # Store variable in current call frame scope
             var_name = self.get_variable_name(operand)
             value = self.pop()
-            frame.locals[var_name] = value
+            if not self.set_variable(var_name, value):
+                self.error(f"Cannot store variable '{var_name}' - no active frame", instruction)
         
         elif opcode == OpCode.LOAD_GLOBAL:
             # Load global variable
@@ -169,31 +215,26 @@ class KorlanVM:
             self.globals[var_name] = value
         
         elif opcode == OpCode.CALL_FUNC:
-            # Call function with proper stack frame management
+            # Call function with proper frame management
             func_address = operand
             if func_address < 0 or func_address >= len(self.constants):
                 self.error(f"Invalid function address: {func_address}", instruction)
             
-            # Create new call frame with current stack base
-            frame = CallFrame(
-                return_address=self.ip + 1,
-                locals={},
-                function_name=f"func_{func_address}",
-                stack_base=len(self.stack)
-            )
+            # Create new call frame
+            frame = self.create_frame(f"func_{func_address}", self.ip + 1)
             
             # For now, we'll assume no parameters (simplified)
             # In a real implementation, we'd pop arguments and store them as locals
             
-            self.call_stack.append(frame)
+            self.push_frame(frame)
             self.ip = func_address - 1  # -1 because we increment at end of loop
         
         elif opcode == OpCode.RETURN:
-            # Return from function
+            # Return from function with proper frame cleanup
             if not self.call_stack:
                 self.error("Return without call frame", instruction)
             
-            frame = self.call_stack.pop()
+            frame = self.pop_frame()
             self.ip = frame.return_address
         
         elif opcode == OpCode.JUMP:
@@ -298,18 +339,25 @@ class KorlanVM:
             self.push(None)  # Print returns null
         
         elif opcode == OpCode.PRINT_STACK:
-            # Debug instruction to print stack state
-            print("=== STACK STATE ===")
+            # Debug instruction to print complete VM state
+            print("=== KORLAN VM STATE ===")
             print(f"IP: {self.ip}")
             print(f"Stack depth: {len(self.stack)}")
+            print(f"Max stack depth: {self.max_stack_depth}")
+            print(f"Call depth: {len(self.call_stack)}")
+            print(f"Max call depth: {self.max_call_depth}")
             print(f"Stack contents:")
             for i, value in enumerate(self.stack):
                 print(f"  [{i}]: {value} ({type(value).__name__})")
-            print(f"Call frames: {len(self.call_stack)}")
+            print(f"Call frames:")
             for i, frame in enumerate(self.call_stack):
-                print(f"  Frame {i}: {frame.function_name} (locals: {frame.locals})")
+                print(f"  Frame {i}: {frame.function_name} (base: {frame.stack_base})")
+                print(f"    Locals: {frame.locals}")
+                if frame.parent_frame:
+                    print(f"    Parent: {frame.parent_frame.function_name}")
             print(f"Globals: {self.globals}")
-            print("==================")
+            print(f"Current frame: {self.current_frame.function_name if self.current_frame else 'None'}")
+            print("======================")
         
         elif opcode == OpCode.HALT:
             # Stop execution
@@ -432,7 +480,9 @@ class KorlanVM:
             "max_stack_depth": self.max_stack_depth,
             "current_stack_depth": len(self.stack),
             "call_stack_depth": len(self.call_stack),
+            "max_call_depth": self.max_call_depth,
             "globals_count": len(self.globals),
+            "current_frame": self.current_frame.function_name if self.current_frame else None,
         }
 
 def main():

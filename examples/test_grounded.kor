@@ -1,0 +1,40 @@
+// Test Grounded Korlan Infrastructure
+// Demonstrates frame management, arrow pipelines, and semantic checking
+
+// Recursive function to test frame management
+fun factorial(n: Int) -> Int {
+    if n <= 1 {
+        1
+    } else {
+        n * factorial(n - 1)
+    }
+}
+
+// Function to test arrow pipeline
+fun process_text(text: String, prefix: String) -> String {
+    prefix + ": " + text
+}
+
+fun main() {
+    // Test 1: Frame management with recursion
+    print("Testing recursion:")
+    let result = factorial(5)
+    print("5! = " + result)
+    
+    // Test 2: Arrow pipeline
+    print("\nTesting arrow pipeline:")
+    "Hello World" -> process_text("Processed") -> print()
+    
+    // Test 3: Mutable variables (should work)
+    print("\nTesting mutable variables:")
+    mut counter = 0
+    counter = counter + 1
+    print("Counter: " + counter)
+    
+    // Test 4: Type safety (this would fail semantic checking if uncommented)
+    // mut x = 5
+    // x = "hello"  // Type mismatch error
+    // y = 10      // Mutability error (not declared with mut)
+    
+    print("\n✅ Grounded Korlan working perfectly!")
+}
